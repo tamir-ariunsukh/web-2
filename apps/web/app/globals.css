@@ -1,0 +1,9 @@
+@import '@repo/ui/styles.css';
+
+/*
+ * The UI package owns the design tokens; this file only adds app-level rules so
+ * tokens stay in one place.
+ */
+
+/* Tailwind v4 scans source files for class names, including workspace packages. */
+@source '../../../../packages/ui/src';

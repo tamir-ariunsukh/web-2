@@ -1,0 +1,850 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions", "relationJoins"]
+  binaryTargets   = ["native"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [citext, pg_trgm, btree_gist, pgcrypto]
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Enums
+// ═══════════════════════════════════════════════════════════════
+
+enum UserRole {
+  CUSTOMER
+  AGENT
+  ADMIN
+}
+
+enum CabinClass {
+  ECONOMY
+  PREMIUM_ECONOMY
+  BUSINESS
+  FIRST
+}
+
+enum SeatPosition {
+  WINDOW
+  MIDDLE
+  AISLE
+}
+
+enum SeatStatus {
+  AVAILABLE
+  HELD
+  BOOKED
+  BLOCKED
+}
+
+enum BookingStatus {
+  HELD
+  PENDING_PAYMENT
+  CONFIRMED
+  TICKETED
+  CHECKED_IN
+  EXPIRED
+  CANCELLED
+  PAYMENT_FAILED
+}
+
+enum PassengerType {
+  ADULT
+  CHILD
+  INFANT
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  UNSPECIFIED
+}
+
+enum PaymentStatus {
+  REQUIRES_ACTION
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  CARD
+  BANK_TRANSFER
+  WALLET
+}
+
+enum RefundStatus {
+  REQUESTED
+  APPROVED
+  PROCESSING
+  COMPLETED
+  REJECTED
+}
+
+enum TicketStatus {
+  PENDING
+  ISSUED
+  VOIDED
+  REFUNDED
+}
+
+enum FlightStatus {
+  SCHEDULED
+  DELAYED
+  DEPARTED
+  ARRIVED
+  CANCELLED
+}
+
+enum ProviderKind {
+  MOCK
+  DUFFEL
+  AMADEUS
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Identity
+// ═══════════════════════════════════════════════════════════════
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique @db.Citext
+  phone        String?  @unique
+  passwordHash String
+  role         UserRole @default(CUSTOMER)
+
+  firstName String
+  lastName  String
+
+  emailVerifiedAt  DateTime?
+  lastLoginAt      DateTime?
+  failedLoginCount Int       @default(0)
+  lockedUntil      DateTime?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  refreshTokens    RefreshToken[]
+  bookings         Booking[]
+  auditLogs        AuditLog[]
+  refundsActioned  Refund[]       @relation("RefundActor")
+  refundsRequested Refund[]       @relation("RefundRequester")
+
+  @@index([role, deletedAt])
+  @@index([createdAt])
+  @@map("users")
+}
+
+model RefreshToken {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @db.Uuid
+  tokenHash    String    @unique
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  // Rotating refresh tokens: a reused token points at its replacement,
+  // which makes theft detectable.
+  replacedById String?   @db.Uuid
+  userAgent    String?
+  ipAddress    String?
+
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  replacedBy RefreshToken?  @relation("TokenRotation", fields: [replacedById], references: [id], onDelete: SetNull)
+  replaces   RefreshToken[] @relation("TokenRotation")
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Reference data
+// ═══════════════════════════════════════════════════════════════
+
+model Airport {
+  id        String   @id @default(uuid()) @db.Uuid
+  iataCode  String   @unique @db.Char(3)
+  icaoCode  String?  @unique @db.Char(4)
+  name      String
+  city      String
+  country   String   @db.Char(2)
+  timezone  String
+  latitude  Decimal? @db.Decimal(9, 6)
+  longitude Decimal? @db.Decimal(9, 6)
+  isActive  Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  departures   Flight[]      @relation("FlightOrigin")
+  arrivals     Flight[]      @relation("FlightDestination")
+  citiesServed CityAirport[]
+
+  @@index([city])
+  @@index([country, isActive])
+  @@map("airports")
+}
+
+/// A city can be served by several airports, so search-by-city fans out.
+model City {
+  id       String  @id @default(uuid()) @db.Uuid
+  code     String  @unique @db.Char(3)
+  name     String
+  country  String  @db.Char(2)
+  timezone String
+  isActive Boolean @default(true)
+
+  airports CityAirport[]
+
+  @@map("cities")
+}
+
+model CityAirport {
+  cityId    String  @db.Uuid
+  airportId String  @db.Uuid
+  isPrimary Boolean @default(false)
+
+  city    City    @relation(fields: [cityId], references: [id], onDelete: Cascade)
+  airport Airport @relation(fields: [airportId], references: [id], onDelete: Cascade)
+
+  @@id([cityId, airportId])
+  @@map("city_airports")
+}
+
+model Airline {
+  id             String  @id @default(uuid()) @db.Uuid
+  iataCode       String  @unique @db.Char(2)
+  icaoCode       String? @unique @db.Char(3)
+  /// Three-digit code used as the prefix of ticket numbers.
+  numericCode    String  @unique @db.Char(3)
+  name           String
+  logoUrl        String?
+  /// e.g. `1-2-1`. Drives the default seat map for this airline.
+  cabinLayoutRef String?
+  isActive       Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  flights         Flight[]
+  seatLayouts     SeatLayout[]
+  promoCodeScopes PromoCodeAirline[]
+  fareClasses     FareClass[]
+
+  @@index([name])
+  @@map("airlines")
+}
+
+model Aircraft {
+  id           String  @id @default(uuid()) @db.Uuid
+  /// Tail number, e.g. `JU-1234`.
+  registration String  @unique
+  model        String
+  manufacturer String
+  seatLayoutId String? @db.Uuid
+  isActive     Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  seatLayout SeatLayout? @relation(fields: [seatLayoutId], references: [id], onDelete: SetNull)
+  flights    Flight[]
+
+  @@index([model])
+  @@map("aircraft")
+}
+
+/// Seat geometry for an aircraft type. Rows are stored as JSON so adding a new
+/// configuration does not require a migration.
+model SeatLayout {
+  id            String  @id @default(uuid()) @db.Uuid
+  airlineId     String  @db.Uuid
+  /// Human identifier, unique per airline, e.g. `B737-800-189`.
+  code          String
+  aircraftModel String
+  /// e.g. `3-3`.
+  configuration String
+  /// Array of CabinLayout objects, validated by the shared seat-map schema.
+  cabins        Json
+  isActive      Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  airline  Airline    @relation(fields: [airlineId], references: [id], onDelete: Restrict)
+  aircraft Aircraft[]
+  seats    Seat[]
+  flights  Flight[]
+
+  @@unique([airlineId, code])
+  @@index([aircraftModel])
+  @@map("seat_layouts")
+}
+
+/// A scheduled flight instance. One row per departure date.
+model Flight {
+  id           String @id @default(uuid()) @db.Uuid
+  /// Commercial flight number, e.g. `OM101`.
+  flightNumber String @db.VarChar(10)
+
+  airlineId  String  @db.Uuid
+  aircraftId String? @db.Uuid
+
+  originId      String @db.Uuid
+  destinationId String @db.Uuid
+
+  /// Scheduled times. Always stored in UTC; local times are derived from the
+  /// airport's timezone at render time.
+  departureAt     DateTime
+  arrivalAt       DateTime
+  durationMinutes Int
+
+  status FlightStatus @default(SCHEDULED)
+
+  /// Which supplier owns this flight, and its identifier with that supplier.
+  provider     ProviderKind @default(MOCK)
+  providerRef  String?
+  providerData Json?
+
+  seatLayoutId   String? @db.Uuid
+  /// How many seats on this flight are still sellable across all fare classes.
+  seatsAvailable Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  airline     Airline     @relation(fields: [airlineId], references: [id], onDelete: Restrict)
+  aircraft    Aircraft?   @relation(fields: [aircraftId], references: [id], onDelete: SetNull)
+  origin      Airport     @relation("FlightOrigin", fields: [originId], references: [id], onDelete: Restrict)
+  destination Airport     @relation("FlightDestination", fields: [destinationId], references: [id], onDelete: Restrict)
+  seatLayout  SeatLayout? @relation(fields: [seatLayoutId], references: [id], onDelete: SetNull)
+
+  fares           Fare[]
+  seats           Seat[]
+  bookingSegments BookingSegment[]
+
+  /// Primary search index: route plus departure date.
+  @@index([originId, destinationId, departureAt])
+  @@index([departureAt, status])
+  @@index([airlineId, flightNumber, departureAt])
+  @@index([provider, providerRef])
+  @@index([arrivalAt])
+  @@map("flights")
+}
+
+/// Fare bucket (booking class) for a flight. Inventory lives here, not on the flight.
+model FareClass {
+  id        String     @id @default(uuid()) @db.Uuid
+  /// Booking class letter, e.g. `Y`, `M`, `C`. Unique within an airline.
+  code      String     @db.VarChar(2)
+  cabin     CabinClass
+  name      String
+  airlineId String     @db.Uuid
+
+  /// `1PC` / `2PC` / `30KG`.
+  baggageAllowance String
+  /// `1PC`.
+  cabinBaggage     String
+  isChangeable     Boolean @default(false)
+  isRefundable     Boolean @default(false)
+  changeFee        Int     @default(0)
+  cancelFee        Int     @default(0)
+  /// Percentage of the fare retained on cancellation, 0-100.
+  cancelPenaltyPct Int     @default(100)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  airline Airline @relation(fields: [airlineId], references: [id], onDelete: Restrict)
+  fares   Fare[]
+
+  /// Ranks cabins for upgrade eligibility and UI ordering.
+  tier Int @default(3)
+
+  @@unique([airlineId, code])
+  @@index([cabin])
+  @@map("fare_classes")
+}
+
+model Fare {
+  id          String @id @default(uuid()) @db.Uuid
+  flightId    String @db.Uuid
+  fareClassId String @db.Uuid
+
+  /// Price in integer minor units of `currency`.
+  basePrice Int
+  taxes     Int
+  fees      Int    @default(0)
+  currency  String @default("USD") @db.Char(3)
+
+  /// Remaining inventory in this bucket on this flight.
+  seatsAvailable Int
+  /// When true this fare can be sold even if seats are held, for waitlist routes.
+  allowWaitlist  Boolean @default(false)
+
+  providerRef String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  flight    Flight           @relation(fields: [flightId], references: [id], onDelete: Cascade)
+  fareClass FareClass        @relation(fields: [fareClassId], references: [id], onDelete: Restrict)
+  segments  BookingSegment[]
+
+  @@unique([flightId, fareClassId])
+  @@index([flightId, seatsAvailable])
+  @@map("fares")
+}
+
+/// A physical seat on a specific flight. Materialised per flight so seat status
+/// is a single-row UPDATE inside the booking transaction.
+model Seat {
+  id       String @id @default(uuid()) @db.Uuid
+  flightId String @db.Uuid
+
+  seatNumber String       @db.VarChar(4)
+  row        Int
+  column     String       @db.Char(1)
+  cabin      CabinClass
+  position   SeatPosition
+
+  status    SeatStatus @default(AVAILABLE)
+  /// Extra charge over the fare, in minor units.
+  surcharge Int        @default(0)
+
+  isExitRow   Boolean @default(false)
+  isBulkhead  Boolean @default(false)
+  hasBassinet Boolean @default(false)
+
+  /// Set while status is HELD so the expiry worker can find stale holds.
+  holdExpiresAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  flight       Flight        @relation(fields: [flightId], references: [id], onDelete: Cascade)
+  bookingSeats BookingSeat[]
+  seatLayout   SeatLayout?   @relation(fields: [seatLayoutId], references: [id])
+  seatLayoutId String?       @db.Uuid
+
+  /// Prevents the same seat number being created twice on one flight.
+  @@unique([flightId, seatNumber])
+  /// Drives the seat-map query for a flight.
+  @@index([flightId, status])
+  /// Lets the expiry worker find expired holds without scanning.
+  @@index([status, holdExpiresAt])
+  @@map("seats")
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Booking
+// ═══════════════════════════════════════════════════════════════
+
+model Booking {
+  /// Six-character public reference; the customer-facing identifier.
+  pnr String @id @db.VarChar(6)
+
+  id     String        @unique @default(uuid()) @db.Uuid
+  userId String?       @db.Uuid
+  status BookingStatus @default(HELD)
+
+  /// Totals in integer minor units. Denormalised from segments for fast listing.
+  baseFare Int
+  taxes    Int
+  fees     Int    @default(0)
+  discount Int    @default(0)
+  total    Int
+  currency String @default("USD") @db.Char(3)
+
+  contactEmail String @db.Citext
+  contactPhone String
+
+  /// Set for HELD and PENDING_PAYMENT; the expiry worker releases seats after this.
+  expiresAt          DateTime?
+  /// Set when the hold is confirmed.
+  confirmedAt        DateTime?
+  /// Set when all tickets have been issued.
+  ticketedAt         DateTime?
+  cancelledAt        DateTime?
+  cancellationReason String?
+
+  /// Client-supplied key so a retried create cannot duplicate the booking.
+  idempotencyKey String? @unique
+  /// Free-form channel marker: `web`, `agent`, `partner`.
+  source         String  @default("web")
+
+  promoCodeId String?    @db.Uuid
+  promoCode   PromoCode? @relation(fields: [promoCodeId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user            User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  segments        BookingSegment[]
+  passengers      Passenger[]
+  payments        Payment[]
+  tickets         Ticket[]
+  refunds         Refund[]
+  events          BookingEvent[]
+  seatAssignments BookingSeat[]
+
+  @@index([userId, status])
+  @@index([status, expiresAt])
+  @@index([contactEmail])
+  @@index([createdAt])
+  @@map("bookings")
+}
+
+/// One leg of the itinerary, in travel order.
+model BookingSegment {
+  id         String @id @default(uuid()) @db.Uuid
+  bookingPnr String @db.VarChar(6)
+  flightId   String @db.Uuid
+  fareId     String @db.Uuid
+
+  /// 0-based position within the itinerary.
+  sequence Int
+
+  /// Per-segment price snapshot so later fare changes do not alter the booking.
+  baseFare Int
+  taxes    Int
+  fees     Int @default(0)
+
+  /// Provider identifiers captured at booking time, used for ticketing.
+  providerRef   String?
+  fareBasisCode String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  booking Booking @relation(fields: [bookingPnr], references: [pnr], onDelete: Cascade)
+  flight  Flight  @relation(fields: [flightId], references: [id], onDelete: Restrict)
+  fare    Fare    @relation(fields: [fareId], references: [id], onDelete: Restrict)
+
+  seatAssignments BookingSeat[]
+  tickets         Ticket[]
+
+  @@unique([bookingPnr, sequence])
+  @@index([flightId])
+  @@map("booking_segments")
+}
+
+model Passenger {
+  id         String @id @default(uuid()) @db.Uuid
+  bookingPnr String @db.VarChar(6)
+
+  /// 0-based position, matching seat-selection `passengerIndex`.
+  sequence Int
+  type     PassengerType
+  gender   Gender        @default(UNSPECIFIED)
+
+  firstName   String
+  middleName  String?
+  lastName    String
+  dateOfBirth DateTime @db.Date
+
+  /// Encrypted at rest with AES-256-GCM. Never logged.
+  passportNumberEnc      String?
+  /// Last four characters, kept in the clear so agents can verify identity.
+  passportLast4          String?   @db.VarChar(4)
+  passportExpiry         DateTime? @db.Date
+  passportIssuingCountry String?   @db.Char(3)
+  nationality            String?   @db.Char(3)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  booking Booking @relation(fields: [bookingPnr], references: [pnr], onDelete: Cascade)
+
+  seatAssignments BookingSeat[]
+  tickets         Ticket[]
+
+  @@unique([bookingPnr, sequence])
+  @@map("passengers")
+}
+
+/// Assignment of a passenger to a seat on a specific segment.
+model BookingSeat {
+  id String @id @default(uuid()) @db.Uuid
+
+  bookingPnr  String @db.VarChar(6)
+  segmentId   String @db.Uuid
+  passengerId String @db.Uuid
+  seatId      String @db.Uuid
+
+  createdAt DateTime @default(now())
+
+  booking   Booking        @relation(fields: [bookingPnr], references: [pnr], onDelete: Cascade)
+  segment   BookingSegment @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+  passenger Passenger      @relation(fields: [passengerId], references: [id], onDelete: Cascade)
+  seat      Seat           @relation(fields: [seatId], references: [id], onDelete: Restrict)
+
+  /// One seat per passenger per segment.
+  @@unique([segmentId, passengerId])
+  /// A seat can only be assigned once per segment.
+  @@unique([segmentId, seatId])
+  @@index([bookingPnr])
+  @@map("booking_seats")
+}
+
+model Payment {
+  id         String @id @default(uuid()) @db.Uuid
+  bookingPnr String @db.VarChar(6)
+
+  amount   Int
+  currency String @default("USD") @db.Char(3)
+
+  status PaymentStatus @default(REQUIRES_ACTION)
+  method PaymentMethod @default(CARD)
+
+  provider       ProviderKind @default(MOCK)
+  providerRef    String?
+  /// Client-supplied key; the unique constraint is what prevents a double charge.
+  idempotencyKey String       @unique
+
+  /// Redacted provider response for support and dispute handling.
+  rawPayload  Json?
+  /// Safe display string, e.g. `visa ****4242`. Never a full PAN.
+  cardSummary String?
+
+  failureCode    String?
+  failureMessage String?
+
+  authorizedAt DateTime?
+  capturedAt   DateTime?
+  refundedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  booking Booking  @relation(fields: [bookingPnr], references: [pnr], onDelete: Cascade)
+  refunds Refund[]
+
+  @@index([bookingPnr, status])
+  @@index([provider, providerRef])
+  @@index([createdAt])
+  @@map("payments")
+}
+
+model Refund {
+  id         String @id @default(uuid()) @db.Uuid
+  paymentId  String @db.Uuid
+  bookingPnr String @db.VarChar(6)
+
+  amount   Int
+  currency String @default("USD") @db.Char(3)
+
+  status RefundStatus @default(REQUESTED)
+  reason String?
+
+  providerRef String?
+
+  requestedById String? @db.Uuid
+  approvedById  String? @db.Uuid
+
+  requestedAt DateTime  @default(now())
+  approvedAt  DateTime?
+  completedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  payment     Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  booking     Booking @relation(fields: [bookingPnr], references: [pnr], onDelete: Cascade)
+  requestedBy User?   @relation("RefundRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+  approvedBy  User?   @relation("RefundActor", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  @@index([bookingPnr, status])
+  @@index([status, requestedAt])
+  @@map("refunds")
+}
+
+model Ticket {
+  id String @id @default(uuid()) @db.Uuid
+
+  bookingPnr  String @db.VarChar(6)
+  segmentId   String @db.Uuid
+  passengerId String @db.Uuid
+
+  /// 13-digit airline accounting number with a Luhn check digit.
+  ticketNumber String       @unique @db.VarChar(13)
+  status       TicketStatus @default(PENDING)
+
+  issuedAt   DateTime?
+  voidedAt   DateTime?
+  refundedAt DateTime?
+
+  /// Object-storage key for the rendered PDF.
+  pdfKey    String?
+  /// Signed payload encoded into the boarding QR code.
+  qrPayload String?
+
+  providerRef String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  booking   Booking        @relation(fields: [bookingPnr], references: [pnr], onDelete: Cascade)
+  segment   BookingSegment @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+  passenger Passenger      @relation(fields: [passengerId], references: [id], onDelete: Cascade)
+
+  @@unique([segmentId, passengerId])
+  @@index([bookingPnr, status])
+  @@map("tickets")
+}
+
+/// Append-only status history. Never updated, never deleted.
+model BookingEvent {
+  id         BigInt @id @default(autoincrement())
+  bookingPnr String @db.VarChar(6)
+
+  fromStatus BookingStatus?
+  toStatus   BookingStatus
+
+  /// `system`, `customer`, `admin`, `payment-webhook`.
+  actorType String
+  actorId   String? @db.Uuid
+
+  message  String?
+  metadata Json?
+
+  createdAt DateTime @default(now())
+
+  booking Booking @relation(fields: [bookingPnr], references: [pnr], onDelete: Cascade)
+
+  @@index([bookingPnr, createdAt])
+  @@index([toStatus, createdAt])
+  @@map("booking_events")
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Promotions
+// ═══════════════════════════════════════════════════════════════
+
+model PromoCode {
+  id   String @id @default(uuid()) @db.Uuid
+  code String @unique @db.Citext
+
+  description String?
+
+  discountType          DiscountType
+  /// Percentage (0-100) for PERCENTAGE, minor units for FIXED_AMOUNT.
+  discountValue         Int
+  /// Only applied to the base fare, never to taxes or fees.
+  appliesToBaseFareOnly Boolean      @default(true)
+  maxDiscountAmount     Int?
+
+  currency String? @db.Char(3)
+  /// Minimum basket total required.
+  minSpend Int     @default(0)
+
+  /// Total redemptions across all customers.
+  maxRedemptions        Int?
+  /// Redemptions allowed per user.
+  maxRedemptionsPerUser Int  @default(1)
+  redemptionCount       Int  @default(0)
+
+  validFrom  DateTime
+  validUntil DateTime
+
+  /// Restrict to specific cabins; empty means all.
+  cabinRestrictions       CabinClass[]
+  /// Restrict to specific origins/destinations; empty means all.
+  originRestrictions      String[]     @db.Char(3)
+  destinationRestrictions String[]     @db.Char(3)
+  /// Minimum trip duration in days, for stay-based promos.
+  minStayDays             Int?
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bookings Booking[]
+  airlines PromoCodeAirline[]
+
+  @@index([isActive, validUntil])
+  @@index([code])
+  @@map("promo_codes")
+}
+
+/// Many-to-many restriction, kept separate from the promo record so it can be
+/// indexed without touching the main row.
+model PromoCodeAirline {
+  promoCodeId String @db.Uuid
+  airlineId   String @db.Uuid
+
+  promoCode PromoCode @relation(fields: [promoCodeId], references: [id], onDelete: Cascade)
+  airline   Airline   @relation(fields: [airlineId], references: [id], onDelete: Cascade)
+
+  @@id([promoCodeId, airlineId])
+  @@map("promo_code_airlines")
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Operations
+// ═══════════════════════════════════════════════════════════════
+
+model AuditLog {
+  id BigInt @id @default(autoincrement())
+
+  actorId    String? @db.Uuid
+  actorType  String
+  actorEmail String?
+
+  action   String
+  entity   String
+  entityId String
+
+  /// Field-level before/after, with PII fields redacted.
+  diff      Json?
+  ipAddress String?
+  userAgent String?
+  requestId String?
+
+  createdAt DateTime @default(now())
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entity, entityId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([action, createdAt])
+  @@map("audit_logs")
+}
+
+/// Inbound webhook log, used for idempotency and replay debugging.
+model WebhookEvent {
+  id String @id @default(uuid()) @db.Uuid
+
+  provider   ProviderKind
+  /// Provider's own event identifier; unique per provider.
+  externalId String
+  eventType  String
+
+  signature String?
+  payload   Json
+
+  processedAt DateTime?
+  failedAt    DateTime?
+  error       String?
+  /// Number of delivery attempts by the provider.
+  attempts    Int       @default(0)
+
+  createdAt DateTime @default(now())
+
+  @@unique([provider, externalId])
+  @@index([processedAt, createdAt])
+  @@map("webhook_events")
+}

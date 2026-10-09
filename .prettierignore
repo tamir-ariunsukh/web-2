@@ -1,0 +1,11 @@
+node_modules
+.pnpm-store
+dist
+build
+.next
+out
+.turbo
+coverage
+playwright-report
+test-results
+pnpm-lock.yaml

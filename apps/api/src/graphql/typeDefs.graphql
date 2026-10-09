@@ -1,0 +1,505 @@
+"""
+Root schema for the airline booking API.
+
+Conventions:
+  * Every mutation that changes booking state returns the Booking so the client
+    can reconcile without a follow-up query.
+  * Failures are reported through the `errors[].extensions.code` field using the
+    codes from @repo/shared ErrorCode, never through string matching on messages.
+  * Cursors are opaque strings; clients treat them as tokens.
+"""
+
+scalar DateTime
+scalar Date
+scalar Time
+scalar Money
+
+# ─────────────────────────────────────────────────────────────
+# Enums
+# ─────────────────────────────────────────────────────────────
+
+enum CabinClass {
+  ECONOMY
+  PREMIUM_ECONOMY
+  BUSINESS
+  FIRST
+}
+
+enum SeatPosition {
+  WINDOW
+  MIDDLE
+  AISLE
+}
+
+enum SeatStatus {
+  AVAILABLE
+  HELD
+  BOOKED
+  BLOCKED
+}
+
+enum BookingStatus {
+  HELD
+  PENDING_PAYMENT
+  CONFIRMED
+  TICKETED
+  CHECKED_IN
+  EXPIRED
+  CANCELLED
+  PAYMENT_FAILED
+}
+
+enum PassengerType {
+  ADULT
+  CHILD
+  INFANT
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  UNSPECIFIED
+}
+
+enum PaymentStatus {
+  REQUIRES_ACTION
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  CARD
+  BANK_TRANSFER
+  WALLET
+}
+
+enum RefundStatus {
+  REQUESTED
+  APPROVED
+  PROCESSING
+  COMPLETED
+  REJECTED
+}
+
+enum TicketStatus {
+  PENDING
+  ISSUED
+  VOIDED
+  REFUNDED
+}
+
+enum FlightStatus {
+  SCHEDULED
+  DELAYED
+  DEPARTED
+  ARRIVED
+  CANCELLED
+}
+
+enum UserRole {
+  CUSTOMER
+  AGENT
+  ADMIN
+}
+
+enum FlightSort {
+  PRICE_ASC
+  PRICE_DESC
+  DURATION_ASC
+  DEPARTURE_ASC
+  ARRIVAL_ASC
+  BEST
+}
+
+enum MockPaymentOutcome {
+  SUCCESS
+  DECLINE
+  INSUFFICIENT_FUNDS
+  TIMEOUT
+}
+
+# ─────────────────────────────────────────────────────────────
+# Identity
+# ─────────────────────────────────────────────────────────────
+
+type User {
+  id: ID!
+  email: String!
+  firstName: String!
+  lastName: String!
+  phone: String
+  role: UserRole!
+  createdAt: DateTime!
+}
+
+type AuthPayload {
+  accessToken: String!
+  refreshToken: String!
+  expiresIn: Int!
+  user: User!
+}
+
+# ─────────────────────────────────────────────────────────────
+# Reference data
+# ─────────────────────────────────────────────────────────────
+
+type Airport {
+  id: ID!
+  iataCode: String!
+  name: String!
+  city: String!
+  country: String!
+  timezone: String!
+}
+
+type Airline {
+  id: ID!
+  iataCode: String!
+  name: String!
+  logoUrl: String
+}
+
+# ─────────────────────────────────────────────────────────────
+# Flights
+# ─────────────────────────────────────────────────────────────
+
+type FareClassInfo {
+  code: String!
+  name: String!
+  cabin: CabinClass!
+  baggageAllowance: String!
+  cabinBaggage: String!
+  isChangeable: Boolean!
+  isRefundable: Boolean!
+  changeFee: Money!
+  cancelFee: Money!
+}
+
+type Fare {
+  id: ID!
+  basePrice: Money!
+  taxes: Money!
+  fees: Money!
+  total: Money!
+  currency: String!
+  seatsAvailable: Int!
+  fareClass: FareClassInfo!
+}
+
+type Flight {
+  id: ID!
+  flightNumber: String!
+  airline: Airline!
+  origin: Airport!
+  destination: Airport!
+  departureAt: DateTime!
+  arrivalAt: DateTime!
+  durationMinutes: Int!
+  status: FlightStatus!
+  stops: Int!
+  fares(cabin: CabinClass): [Fare!]!
+  lowestFare: Fare
+}
+
+type FlightSearchResult {
+  flights: [Flight!]!
+  totalCount: Int!
+  nextCursor: String
+  # Cheapest total across the whole result set, for the "from" label.
+  priceFrom: Money
+  currency: String!
+}
+
+# ─────────────────────────────────────────────────────────────
+# Seats
+# ─────────────────────────────────────────────────────────────
+
+type Seat {
+  id: ID!
+  seatNumber: String!
+  row: Int!
+  column: String!
+  cabin: CabinClass!
+  position: SeatPosition!
+  status: SeatStatus!
+  price: Money!
+  isExitRow: Boolean!
+  isBulkhead: Boolean!
+  hasBassinet: Boolean!
+  holdExpiresAt: DateTime
+}
+
+type SeatMapRow {
+  row: Int!
+  isExitRow: Boolean!
+  isBulkhead: Boolean!
+  hasBassinet: Boolean!
+  seats: [Seat!]!
+  aislesAfter: [Int!]!
+}
+
+type SeatMapCabin {
+  cabin: CabinClass!
+  label: String!
+  columns: [String!]!
+  rows: [SeatMapRow!]!
+}
+
+type SeatMapSummary {
+  totalSeats: Int!
+  available: Int!
+  held: Int!
+  booked: Int!
+  blocked: Int!
+}
+
+type SeatMap {
+  flightId: ID!
+  aircraftModel: String!
+  configuration: String!
+  cabins: [SeatMapCabin!]!
+  summary: SeatMapSummary!
+}
+
+# ─────────────────────────────────────────────────────────────
+# Booking
+# ─────────────────────────────────────────────────────────────
+
+type Passenger {
+  id: ID!
+  sequence: Int!
+  type: PassengerType!
+  gender: Gender!
+  firstName: String!
+  middleName: String
+  lastName: String!
+  dateOfBirth: Date!
+  nationality: String
+  passportLast4: String
+}
+
+type BookingSegment {
+  id: ID!
+  sequence: Int!
+  flight: Flight!
+  fare: Fare!
+  baseFare: Money!
+  taxes: Money!
+  fees: Money!
+  assignedSeats: [Seat!]!
+}
+
+type PriceBreakdown {
+  baseFare: Money!
+  taxes: Money!
+  fees: Money!
+  discount: Money!
+  total: Money!
+  currency: String!
+}
+
+type Booking {
+  pnr: String!
+  status: BookingStatus!
+  segments: [BookingSegment!]!
+  passengers: [Passenger!]!
+  contactEmail: String!
+  contactPhone: String!
+  price: PriceBreakdown!
+  expiresAt: DateTime
+  confirmedAt: DateTime
+  ticketedAt: DateTime
+  cancelledAt: DateTime
+  createdAt: DateTime!
+  payments: [Payment!]!
+  tickets: [Ticket!]!
+}
+
+type BookingEvent {
+  id: ID!
+  fromStatus: BookingStatus
+  toStatus: BookingStatus!
+  actorType: String!
+  message: String
+  createdAt: DateTime!
+}
+
+# ─────────────────────────────────────────────────────────────
+# Payment and ticketing
+# ─────────────────────────────────────────────────────────────
+
+type Payment {
+  id: ID!
+  amount: Money!
+  currency: String!
+  status: PaymentStatus!
+  method: PaymentMethod!
+  cardSummary: String
+  failureCode: String
+  createdAt: DateTime!
+}
+
+type PaymentIntent {
+  paymentId: ID!
+  amount: Money!
+  currency: String!
+  status: PaymentStatus!
+  # Opaque handle the client presents to confirm; mock provider only.
+  clientSecret: String!
+}
+
+type Refund {
+  id: ID!
+  amount: Money!
+  currency: String!
+  status: RefundStatus!
+  reason: String
+  requestedAt: DateTime!
+  completedAt: DateTime
+}
+
+type Ticket {
+  id: ID!
+  ticketNumber: String!
+  status: TicketStatus!
+  segmentId: ID!
+  passengerId: ID!
+  issuedAt: DateTime
+  # Short-lived signed URL for the PDF, or null when not yet issued.
+  pdfUrl: String
+  qrPayload: String
+}
+
+type BoardingPass {
+  ticketNumber: String!
+  passengerName: String!
+  seatNumber: String
+  gate: String
+  boardingTime: DateTime
+  qrPayload: String!
+}
+
+# ─────────────────────────────────────────────────────────────
+# Inputs
+# ─────────────────────────────────────────────────────────────
+
+input PassengerCountInput {
+  adults: Int! = 1
+  children: Int! = 0
+  infants: Int! = 0
+}
+
+input FlightFiltersInput {
+  maxStops: Int
+  airlines: [String!]
+  maxPrice: Money
+  minPrice: Money
+  departAfter: Time
+  departBefore: Time
+  arriveAfter: Time
+  arriveBefore: Time
+  maxDurationMinutes: Int
+  refundableOnly: Boolean
+}
+
+input FlightSearchInput {
+  origin: String!
+  destination: String!
+  departDate: Date!
+  returnDate: Date
+  passengers: PassengerCountInput!
+  cabin: CabinClass = ECONOMY
+  filters: FlightFiltersInput
+  sort: FlightSort = BEST
+  cursor: String
+  limit: Int = 20
+}
+
+input PassengerInput {
+  type: PassengerType!
+  firstName: String!
+  lastName: String!
+  middleName: String
+  dateOfBirth: Date!
+  gender: Gender = UNSPECIFIED
+  nationality: String
+  passportNumber: String
+  passportExpiry: Date
+  passportIssuingCountry: String
+}
+
+input BookingSegmentInput {
+  flightId: ID!
+  fareId: ID!
+}
+
+input CreateBookingInput {
+  segments: [BookingSegmentInput!]!
+  contactEmail: String!
+  contactPhone: String!
+  passengers: [PassengerInput!]!
+  promoCode: String
+  idempotencyKey: String
+}
+
+input SeatSelectionInput {
+  passengerIndex: Int!
+  segmentId: ID!
+  seatId: ID!
+}
+
+input RegisterInput {
+  email: String!
+  password: String!
+  firstName: String!
+  lastName: String!
+  phone: String
+}
+
+input LoginInput {
+  email: String!
+  password: String!
+}
+
+# ─────────────────────────────────────────────────────────────
+# Queries
+# ─────────────────────────────────────────────────────────────
+
+type Query {
+  me: User
+  searchFlights(input: FlightSearchInput!): FlightSearchResult!
+  flight(id: ID!): Flight
+  seatMap(flightId: ID!, cabin: CabinClass): SeatMap!
+  booking(pnr: String!): Booking
+  myBookings(status: BookingStatus): [Booking!]!
+  bookingEvents(pnr: String!): [BookingEvent!]!
+  airports(query: String!): [Airport!]!
+  airlines: [Airline!]!
+}
+
+# ─────────────────────────────────────────────────────────────
+# Mutations
+# ─────────────────────────────────────────────────────────────
+
+type Mutation {
+  register(input: RegisterInput!): AuthPayload!
+  login(input: LoginInput!): AuthPayload!
+  refreshToken(refreshToken: String!): AuthPayload!
+  logout(refreshToken: String!): Boolean!
+
+  createBooking(input: CreateBookingInput!): Booking!
+  updatePassengers(pnr: String!, passengers: [PassengerInput!]!): Booking!
+  selectSeats(pnr: String!, selections: [SeatSelectionInput!]!): Booking!
+  confirmBooking(pnr: String!): Booking!
+  cancelBooking(pnr: String!, reason: String): Booking!
+
+  createPaymentIntent(pnr: String!): PaymentIntent!
+  """Mock gateway only. Never enabled when PAYMENT_PROVIDER is a real provider."""
+  simulatePayment(paymentId: ID!, outcome: MockPaymentOutcome!): Payment!
+
+  requestRefund(pnr: String!, reason: String, amount: Money): Refund!
+  checkIn(pnr: String!, passengerId: ID!): BoardingPass!
+}

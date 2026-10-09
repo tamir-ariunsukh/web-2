@@ -1,0 +1,65 @@
+@import 'tailwindcss';
+
+/*
+ * Design tokens.
+ *
+ * Tailwind v4 reads `@theme` to generate utilities, so the values declared here
+ * become `bg-brand-500`, `text-seat-available`, and so on. Changing a token
+ * updates every consumer without touching a component.
+ */
+@theme {
+  --color-brand-50: oklch(0.97 0.014 254);
+  --color-brand-100: oklch(0.94 0.03 254);
+  --color-brand-200: oklch(0.88 0.06 254);
+  --color-brand-300: oklch(0.81 0.09 254);
+  --color-brand-400: oklch(0.72 0.13 254);
+  --color-brand-500: oklch(0.62 0.17 254);
+  --color-brand-600: oklch(0.53 0.18 254);
+  --color-brand-700: oklch(0.45 0.16 254);
+  --color-brand-800: oklch(0.38 0.13 254);
+  --color-brand-900: oklch(0.32 0.1 254);
+  --color-brand-950: oklch(0.22 0.07 254);
+
+  /* Seat states are semantic, not decorative: the seat map keys off them. */
+  --color-seat-available: oklch(0.92 0.04 150);
+  --color-seat-selected: oklch(0.62 0.17 254);
+  --color-seat-held: oklch(0.88 0.12 85);
+  --color-seat-occupied: oklch(0.85 0.02 260);
+  --color-seat-blocked: oklch(0.88 0.06 25);
+
+  --radius-card: 0.875rem;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px -12px rgb(0 0 0 / 0.16);
+}
+
+/* Dark mode is driven by a class on <html> so it survives SSR. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  html {
+    color-scheme: light;
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-white text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100;
+  }
+
+  /* Keyboard users must always be able to see where focus is. */
+  :focus-visible {
+    @apply outline-brand-500 outline-2 outline-offset-2;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

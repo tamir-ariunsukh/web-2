@@ -1,0 +1,29 @@
+{
+  "name": "@repo/config",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "files": ["tsconfig", "eslint", "tailwind", "prettier"],
+  "exports": {
+    "./tsconfig/base.json": "./tsconfig/base.json",
+    "./tsconfig/nextjs.json": "./tsconfig/nextjs.json",
+    "./tsconfig/node.json": "./tsconfig/node.json",
+    "./tsconfig/react-library.json": "./tsconfig/react-library.json",
+    "./eslint/base": "./eslint/base.mjs",
+    "./eslint/nextjs": "./eslint/nextjs.mjs",
+    "./eslint/node": "./eslint/node.mjs",
+    "./tailwind/preset": "./tailwind/preset.ts",
+    "./prettier": "./prettier/index.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@next/eslint-plugin-next": "^15.1.3",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-import-x": "^4.6.1",
+    "eslint-plugin-react": "^7.37.3",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "eslint-plugin-turbo": "^2.3.3",
+    "globals": "^15.14.0",
+    "typescript-eslint": "^8.18.2"
+  }
+}
