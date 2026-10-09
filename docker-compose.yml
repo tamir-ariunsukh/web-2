@@ -12,8 +12,9 @@ services:
       # Deterministic collation so index ordering matches CI and production.
       POSTGRES_INITDB_ARGS: '--encoding=UTF8 --locale=C'
     ports:
-      # Host port 5433 avoids colliding with a PostgreSQL already installed on
-      # the developer's machine listening on 5432.
+      # Published on 5433 by default so it does not collide with a PostgreSQL
+      # installed directly on the host, which usually owns 5432. Override
+      # POSTGRES_PORT in .env if that port is also taken; DATABASE_URL must match.
       - '${POSTGRES_PORT:-5433}:5432'
     volumes:
       - postgres-data:/var/lib/postgresql/data

@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { CorsairError, ErrorCode, type LoginInput, type RegisterInput } from '@repo/shared';
 
 import {
@@ -175,7 +177,7 @@ export async function refreshSession(
 ): Promise<AuthPayloadResult> {
   const { prisma, env, logger } = context;
 
-  let claims: { sub: string; jti: string };
+  let claims: { sub: string; jti: string; family: string };
   try {
     const verified = await verifyRefreshToken(token, env.JWT_REFRESH_SECRET);
     claims = verified.claims;
@@ -229,7 +231,7 @@ export async function refreshSession(
     throw new CorsairError(ErrorCode.TOKEN_REVOKED, 'Account no longer exists');
   }
 
-  const payload = await issueSession(context, user, { familyId: claims.jti });
+  const payload = await issueSession(context, user, { familyId: claims.family });
 
   // Revoke the presented token only after the replacement is persisted, so a
   // crash between the two steps cannot lock the customer out.
@@ -276,7 +278,9 @@ async function issueSession(
   );
 
   const refreshToken = await signRefreshToken(
-    { sub: user.id, jti: options.familyId },
+    // A fresh `jti` every time; reusing it would produce a byte-identical token
+    // and collide on `RefreshToken.tokenHash`.
+    { sub: user.id, jti: randomUUID(), family: options.familyId },
     env.JWT_REFRESH_SECRET,
     env.JWT_REFRESH_TTL,
   );

@@ -83,8 +83,9 @@ pnpm dev
 | Health (ready) | http://localhost:4000/health/ready |
 | MinIO console | http://localhost:9001 |
 
-> PostgreSQL is published on host port **5435**, not 5432, so it does not collide
-> with a locally installed server. Override `POSTGRES_PORT` in `.env` if needed.
+> PostgreSQL is published on host port **5433** by default, not 5432, so it does
+> not collide with a locally installed server. If 5433 is also taken, set
+> `POSTGRES_PORT` in `.env` and update `DATABASE_URL` to match.
 
 ## Useful commands
 

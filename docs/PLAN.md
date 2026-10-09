@@ -411,23 +411,61 @@ export interface FlightProvider {
 
 ### Баталгаажсан үр дүн
 
+**Pipeline**
+
 - `pnpm turbo run lint typecheck build test` → **21/21 task ногоон**, 0 lint error
-- **52 unit тест** ногоон (@repo/shared: money, PNR, schemas, state machine)
-- PostgreSQL 16 дээр migration + seed: 20 airport, 12 airline, 4308 flight, ~76,000 seat
-- **E2E flow:** register → search → createBooking → seatMap → selectSeats → confirm → payment → CONFIRMED
-- **Concurrency:** 12 зэрэгцээ хүсэлт нэг суудалд → яг 1 winner (давхар борлуулалт байхгүй)
-- **Idempotency:** давхардсан create → ижил PNR; давхардсан webhook → нэг цэнэглэлт
-- **Hold expiry:** 20 минутаар хөгшрүүлсэн hold → seat `AVAILABLE`, booking `EXPIRED`, event бичигдсэн
-- **Frontend:** нүүр + хайлтын үр дүн бодит API-аас ажилласан
+- **52 unit тест** ногоон (`@repo/shared`: money, PNR, schemas, state machine)
+- PostgreSQL 16 дээр migration + seed: 20 airport, 12 airline, 48 fare class, 4308 flight, ~76,000 seat
+
+**E2E (21 шалгалт, бүгд ногоон)**
+
+- Auth: register, weak password татгалзал, duplicate email татгалзал, refresh rotation, **reuse detection → бүх family хүчингүй**
+- Booking: HELD үүсгэлт, idempotent create (ижил PNR), зорчигчийн тоо ↔ суудлын тоо таарах шалгалт
+- Payment: REQUIRES_ACTION → SUCCEEDED, `cardSummary` хадгалагдсан, replay нь idempotent
+- Cancellation: CONFIRMED → CANCELLED, **хоёр суудал чөлөөлөгдсөн**
+- Refund: бүрэн дүн буцаагдсан, over-refund татгалзагдсан
+- Audit: HELD → PENDING_PAYMENT → CONFIRMED → CANCELLED бүгд `booking_events`-д
+
+**Concurrency (2 удаа батлагдсан)**
+
+- 12 зэрэгцээ хүсэлт нэг суудалд → яг 1 winner, 11 `SEAT_ALREADY_TAKEN`
+- 10 зэрэгцээ хүсэлт дахин → яг 1 winner
+- **Давхар борлуулалт байхгүй**
+
+**Hold expiry**
+
+- 20 минутаар хөгшрүүлсэн hold → seat `AVAILABLE`, booking `EXPIRED`, `expiresAt` цэвэрлэгдсэн, event бичигдсэн
+
+**Production hardening**
+
+- Stacktrace error response-д гарахгүй
+- Дотоод алдаа `Internal server error` болж нуугдсан, domain code хадгалагдсан
+- Env validation нь boot үед дутуу/placeholder secret-ыг илрүүлнэ
+- `GRAPHQL_INTROSPECTION=false` ажиллана
+
+**Frontend**
+
+- Нүүр хуудас + хайлтын хэлбэр (Zod validation) render болсон
+- Хайлтын үр дүн бодит API-аас: `OM100`, үнэ, `Select` товч
+
+### Зассан бодит алдаанууд
+
+| Алдаа | Нөлөө | Засвар |
+|---|---|---|
+| Refresh token `jti` давхцал | Дараагийн refresh нь unique constraint унаж байсан | Token бүрд шинэ `jti`, `family` тусдаа claim |
+| Seat map ↔ holdSeats зөрчил | UI нь суудлыг чөлөөтэй гэж харуулах ч захиалга авахгүй | `holdSeats` нь дууссан hold-ыг reclaim хийх болсон |
+| `z.coerce.boolean()` | `"false"` string нь `true` болж байсан | `booleanFromString` parser |
+| SDL дотор `/** */` | GraphQL schema parse унаж байсан | `#` коммент болгосон |
 
 ### Дараагийн алхам
 
 1. Booking wizard хуудсууд (`/booking/[flightId]` → зорчигч → суудал → төлбөр → баталгаа)
-2. Auth хуудсууд + session cookie middleware
-3. `simulatePayment`-ийг HMAC webhook endpoint-оор солих
-4. PDF ticket + QR + имэйл (Phase 4 үлдсэн)
-5. Admin panel (Phase 6 үлдсэн)
-6. Playwright + load test (Phase 7)
+2. Auth хуудсууд + httpOnly session cookie middleware
+3. `simulatePayment`-ийг HMAC-signed webhook endpoint-оор солих
+4. PDF ticket + QR render + S3/MinIO upload, имэйл илгээлт
+5. Admin panel — flight CRUD, refund approve, audit log viewer
+6. Duffel/Amadeus adapter
+7. Playwright E2E + k6 load test
 
 ---
 

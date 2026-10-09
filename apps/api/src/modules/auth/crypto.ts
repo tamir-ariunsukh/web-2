@@ -51,8 +51,10 @@ export interface AccessTokenClaims {
 
 export interface RefreshTokenClaims {
   readonly sub: string;
-  /** Token family id, stable across rotations so reuse can be detected. */
+  /** Unique per token; rotates on every refresh. */
   readonly jti: string;
+  /** Stable across a rotation chain, so replay can revoke the whole family. */
+  readonly family: string;
 }
 
 const ISSUER = 'airline-booking';
@@ -78,7 +80,7 @@ export async function signRefreshToken(
   secret: string,
   ttl: string,
 ): Promise<string> {
-  return new SignJWT({})
+  return new SignJWT({ family: claims.family })
     .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
     .setSubject(claims.sub)
     .setJti(claims.jti)
@@ -116,14 +118,14 @@ export async function verifyRefreshToken(
   secret: string,
 ): Promise<VerifiedToken<RefreshTokenClaims>> {
   const payload = await verify(token, secret);
-  const { sub, jti } = payload;
+  const { sub, jti, family } = payload;
 
-  if (typeof sub !== 'string' || typeof jti !== 'string') {
+  if (typeof sub !== 'string' || typeof jti !== 'string' || typeof family !== 'string') {
     throw new Error('TOKEN_INVALID');
   }
 
   return {
-    claims: { sub, jti },
+    claims: { sub, jti, family },
     expiresAt: expiryOf(payload),
   };
 }
