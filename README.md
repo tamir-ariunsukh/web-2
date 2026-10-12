@@ -1,5 +1,7 @@
 # Airline Booking Platform
 
+> Монгол хэлээр уншихыг хүсвэл: [README.mn.md](./README.mn.md)
+
 Flight search, seat selection, booking, payment and ticketing. Turborepo monorepo:
 Next.js 15 web app, Express + GraphQL API, BullMQ worker, PostgreSQL via Prisma.
 
@@ -53,6 +55,8 @@ to the local catalogue when a live supplier is unreachable, and reports
 
 ## Getting started
 
+> Just want to run the app? See the short checklist in [RUN.md](./RUN.md).
+
 ```bash
 # 1. Install dependencies
 pnpm install
@@ -77,14 +81,14 @@ SEED_PASSWORD_HASH="$argon2id$v=19$m=65536,t=3,p=4$..." pnpm --filter @repo/db d
 pnpm dev
 ```
 
-| Service | URL |
-|---|---|
-| Web | http://localhost:3000 |
-| Admin | http://localhost:3000/admin |
-| GraphQL | http://localhost:4000/graphql |
-| Health (live) | http://localhost:4000/health/live |
+| Service        | URL                                |
+| -------------- | ---------------------------------- |
+| Web            | http://localhost:3000              |
+| Admin          | http://localhost:3000/admin        |
+| GraphQL        | http://localhost:4000/graphql      |
+| Health (live)  | http://localhost:4000/health/live  |
 | Health (ready) | http://localhost:4000/health/ready |
-| MinIO console | http://localhost:9001 |
+| MinIO console  | http://localhost:9001              |
 
 ### Roles
 
@@ -130,14 +134,14 @@ default strict mode, which is why the flag lives on the scripts rather than in
 
 Notable variables:
 
-| Variable | Purpose |
-|---|---|
-| `FLIGHT_PROVIDER` | `mock`, `duffel` or `amadeus` |
-| `PROVIDER_FALLBACK_TO_MOCK` | Fall back to the local catalogue when a live supplier fails |
-| `BOOKING_HOLD_MINUTES` | How long a seat hold survives before the expiry sweep releases it |
-| `PAYMENT_PROVIDER` | `mock`; gates the `simulatePayment` mutation |
-| `PII_ENCRYPTION_KEY` | 32-byte hex key for encrypting passport data |
-| `GRAPHQL_MAX_DEPTH` | Query depth ceiling, to blunt abusive queries |
+| Variable                    | Purpose                                                           |
+| --------------------------- | ----------------------------------------------------------------- |
+| `FLIGHT_PROVIDER`           | `mock`, `duffel` or `amadeus`                                     |
+| `PROVIDER_FALLBACK_TO_MOCK` | Fall back to the local catalogue when a live supplier fails       |
+| `BOOKING_HOLD_MINUTES`      | How long a seat hold survives before the expiry sweep releases it |
+| `PAYMENT_PROVIDER`          | `mock`; gates the `simulatePayment` mutation                      |
+| `PII_ENCRYPTION_KEY`        | 32-byte hex key for encrypting passport data                      |
+| `GRAPHQL_MAX_DEPTH`         | Query depth ceiling, to blunt abusive queries                     |
 
 ## GraphQL
 
@@ -153,37 +157,93 @@ redacted and stack traces are omitted.
 
 ```graphql
 # 1. Search
-query { searchFlights(input: { origin: "ULN", destination: "SEL",
-        departDate: "2026-10-12", passengers: { adults: 1 }, cabin: ECONOMY }) {
-  flights { id flightNumber lowestFare { id total currency } } } }
+query {
+  searchFlights(
+    input: {
+      origin: "ULN"
+      destination: "SEL"
+      departDate: "2026-10-12"
+      passengers: { adults: 1 }
+      cabin: ECONOMY
+    }
+  ) {
+    flights {
+      id
+      flightNumber
+      lowestFare {
+        id
+        total
+        currency
+      }
+    }
+  }
+}
 
 # 2. Hold the seats with a booking
-mutation { createBooking(input: {
-    segments: [{ flightId: "...", fareId: "..." }]
-    contactEmail: "you@example.com", contactPhone: "+97699112233"
-    # Optional here; also editable later via updateBookingContact
-    emergencyContactName: "Dulmaa Bat", emergencyContactPhone: "+97688001122"
-    homeAddress: "12 Sukhbaatar Ave, Ulaanbaatar"
-    passengers: [{ type: ADULT, firstName: "Bat", lastName: "Erdene",
-                   dateOfBirth: "1990-05-14" }]
-    idempotencyKey: "any-stable-client-key"
-  }) { pnr status expiresAt } }
+mutation {
+  createBooking(
+    input: {
+      segments: [{ flightId: "...", fareId: "..." }]
+      contactEmail: "you@example.com"
+      contactPhone: "+97699112233"
+      # Optional here; also editable later via updateBookingContact
+      emergencyContactName: "Dulmaa Bat"
+      emergencyContactPhone: "+97688001122"
+      homeAddress: "12 Sukhbaatar Ave, Ulaanbaatar"
+      passengers: [{ type: ADULT, firstName: "Bat", lastName: "Erdene", dateOfBirth: "1990-05-14" }]
+      idempotencyKey: "any-stable-client-key"
+    }
+  ) {
+    pnr
+    status
+    expiresAt
+  }
+}
 
 # 2b. Amend contact details on an existing booking (owner, or staff)
-mutation { updateBookingContact(input: {
-    pnr: "ABC123", contactPhone: "+97699112233"
-    emergencyContactName: "Dulmaa Bat", emergencyContactPhone: "+97688001122"
-    homeAddress: "12 Sukhbaatar Ave, Ulaanbaatar"
-  }) { pnr contactPhone emergencyContactPhone homeAddress } }
+mutation {
+  updateBookingContact(
+    input: {
+      pnr: "ABC123"
+      contactPhone: "+97699112233"
+      emergencyContactName: "Dulmaa Bat"
+      emergencyContactPhone: "+97688001122"
+      homeAddress: "12 Sukhbaatar Ave, Ulaanbaatar"
+    }
+  ) {
+    pnr
+    contactPhone
+    emergencyContactPhone
+    homeAddress
+  }
+}
 
 # 3. Choose seats (one selection per seated passenger, per segment)
-mutation { selectSeats(pnr: "ABC123", selections: [
-    { passengerIndex: 0, segmentId: "...", seatId: "..." } ]) { pnr } }
+mutation {
+  selectSeats(pnr: "ABC123", selections: [{ passengerIndex: 0, segmentId: "...", seatId: "..." }]) {
+    pnr
+  }
+}
 
 # 4. Move to payment, then settle
-mutation { confirmBooking(pnr: "ABC123") { status } }
-mutation { createPaymentIntent(pnr: "ABC123") { paymentId amount status } }
-mutation { simulatePayment(paymentId: "...", outcome: SUCCESS) { status cardSummary } }
+mutation {
+  confirmBooking(pnr: "ABC123") {
+    status
+  }
+}
+mutation {
+  createPaymentIntent(pnr: "ABC123") {
+    paymentId
+    amount
+    status
+  }
+}
+mutation {
+  simulatePayment(paymentId: "...", outcome: SUCCESS) {
+    status
+    cardSummary
+  }
+}
 ```
 
 `simulatePayment` stands in for the gateway callback. It accepts `SUCCESS`,
@@ -192,17 +252,17 @@ mutation { simulatePayment(paymentId: "...", outcome: SUCCESS) { status cardSumm
 
 ## Security
 
-| Risk | Mitigation |
-|---|---|
-| SQL injection | Prisma parameterised queries; raw SQL confined to bound-parameter seat locks |
-| Password compromise | argon2id, memory-hard parameters, rehash-on-login when parameters strengthen |
-| Token theft | Refresh-token rotation with reuse detection; the whole family is revoked on replay |
-| Credential stuffing | Per-account lockout after 5 failures, plus generic error messages to prevent enumeration |
-| Seat overselling | `SELECT FOR UPDATE` + SERIALIZABLE + bounded retry |
-| Double charge | Unique idempotency keys on bookings and payments |
-| PII exposure | Passport data encrypted at rest; contact details and home address never written to logs or audit rows - only the field names that changed; log redaction for credentials and tokens |
-| GraphQL abuse | Depth limit, request body cap, persisted-query ready |
-| Stack disclosure | Stack traces omitted from error responses in production |
+| Risk                | Mitigation                                                                                                                                                                          |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SQL injection       | Prisma parameterised queries; raw SQL confined to bound-parameter seat locks                                                                                                        |
+| Password compromise | argon2id, memory-hard parameters, rehash-on-login when parameters strengthen                                                                                                        |
+| Token theft         | Refresh-token rotation with reuse detection; the whole family is revoked on replay                                                                                                  |
+| Credential stuffing | Per-account lockout after 5 failures, plus generic error messages to prevent enumeration                                                                                            |
+| Seat overselling    | `SELECT FOR UPDATE` + SERIALIZABLE + bounded retry                                                                                                                                  |
+| Double charge       | Unique idempotency keys on bookings and payments                                                                                                                                    |
+| PII exposure        | Passport data encrypted at rest; contact details and home address never written to logs or audit rows - only the field names that changed; log redaction for credentials and tokens |
+| GraphQL abuse       | Depth limit, request body cap, persisted-query ready                                                                                                                                |
+| Stack disclosure    | Stack traces omitted from error responses in production                                                                                                                             |
 
 ## Testing
 
