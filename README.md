@@ -69,7 +69,9 @@ pnpm docker:up
 # 4. Apply migrations and seed the catalogue
 pnpm --filter @repo/db db:generate
 pnpm --filter @repo/db exec prisma migrate deploy
-pnpm --filter @repo/db db:seed
+# Set SEED_PASSWORD_HASH to also create the demo admin/agent/customer accounts
+# (hash of your chosen password; the app never ships a default credential).
+SEED_PASSWORD_HASH="$argon2id$v=19$m=65536,t=3,p=4$..." pnpm --filter @repo/db db:seed
 
 # 5. Run everything
 pnpm dev
@@ -78,10 +80,20 @@ pnpm dev
 | Service | URL |
 |---|---|
 | Web | http://localhost:3000 |
+| Admin | http://localhost:3000/admin |
 | GraphQL | http://localhost:4000/graphql |
 | Health (live) | http://localhost:4000/health/live |
 | Health (ready) | http://localhost:4000/health/ready |
 | MinIO console | http://localhost:9001 |
+
+### Roles
+
+`/admin` is limited to `ADMIN` and `AGENT`. The role is enforced twice: the page
+layout redirects, and every admin query/mutation re-checks it in the service
+layer. `/admin/users` and the destructive taxonomy actions are `ADMIN` only.
+
+An `ADMIN` cannot change their own role, and every staff action is written to
+`audit_logs`.
 
 > PostgreSQL is published on host port **5433** by default, not 5432, so it does
 > not collide with a locally installed server. If 5433 is also taken, set
@@ -108,6 +120,13 @@ All variables are documented in [.env.example](./.env.example). `apps/api/src/en
 validates them at boot with Zod, so a misconfigured deployment fails immediately
 rather than at the first request that touches a missing value. Production builds
 additionally reject development placeholder secrets.
+
+The API and worker load the repository-root `.env` at startup through Node's
+native `--env-file-if-exists` flag (see their `dev`/`start` scripts), so `pnpm dev`
+works without exporting anything by hand. Turborepo itself does not load `.env`
+files into task runtimes, and it filters process environment variables in its
+default strict mode, which is why the flag lives on the scripts rather than in
+`turbo.json`.
 
 Notable variables:
 
@@ -142,10 +161,20 @@ query { searchFlights(input: { origin: "ULN", destination: "SEL",
 mutation { createBooking(input: {
     segments: [{ flightId: "...", fareId: "..." }]
     contactEmail: "you@example.com", contactPhone: "+97699112233"
+    # Optional here; also editable later via updateBookingContact
+    emergencyContactName: "Dulmaa Bat", emergencyContactPhone: "+97688001122"
+    homeAddress: "12 Sukhbaatar Ave, Ulaanbaatar"
     passengers: [{ type: ADULT, firstName: "Bat", lastName: "Erdene",
                    dateOfBirth: "1990-05-14" }]
     idempotencyKey: "any-stable-client-key"
   }) { pnr status expiresAt } }
+
+# 2b. Amend contact details on an existing booking (owner, or staff)
+mutation { updateBookingContact(input: {
+    pnr: "ABC123", contactPhone: "+97699112233"
+    emergencyContactName: "Dulmaa Bat", emergencyContactPhone: "+97688001122"
+    homeAddress: "12 Sukhbaatar Ave, Ulaanbaatar"
+  }) { pnr contactPhone emergencyContactPhone homeAddress } }
 
 # 3. Choose seats (one selection per seated passenger, per segment)
 mutation { selectSeats(pnr: "ABC123", selections: [
@@ -171,7 +200,7 @@ mutation { simulatePayment(paymentId: "...", outcome: SUCCESS) { status cardSumm
 | Credential stuffing | Per-account lockout after 5 failures, plus generic error messages to prevent enumeration |
 | Seat overselling | `SELECT FOR UPDATE` + SERIALIZABLE + bounded retry |
 | Double charge | Unique idempotency keys on bookings and payments |
-| PII exposure | Passport data encrypted at rest; log redaction for credentials and tokens |
+| PII exposure | Passport data encrypted at rest; contact details and home address never written to logs or audit rows - only the field names that changed; log redaction for credentials and tokens |
 | GraphQL abuse | Depth limit, request body cap, persisted-query ready |
 | Stack disclosure | Stack traces omitted from error responses in production |
 

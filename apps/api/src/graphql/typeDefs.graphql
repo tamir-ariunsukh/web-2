@@ -121,6 +121,15 @@ enum MockPaymentOutcome {
   TIMEOUT
 }
 
+enum ProductKind {
+  SEAT
+  BAGGAGE
+  INSURANCE
+  MEAL
+  LOUNGE
+  OTHER
+}
+
 # ─────────────────────────────────────────────────────────────
 # Identity
 # ─────────────────────────────────────────────────────────────
@@ -257,7 +266,7 @@ type SeatMapSummary {
 }
 
 type SeatMap {
-  flightId: ID!
+  layoutId: ID!
   aircraftModel: String!
   configuration: String!
   cabins: [SeatMapCabin!]!
@@ -308,6 +317,11 @@ type Booking {
   passengers: [Passenger!]!
   contactEmail: String!
   contactPhone: String!
+  """Someone the airline can call if the traveller cannot be reached."""
+  emergencyContactName: String
+  emergencyContactPhone: String
+  """Street address of the traveller, used for disruption notices."""
+  homeAddress: String
   price: PriceBreakdown!
   expiresAt: DateTime
   confirmedAt: DateTime
@@ -440,9 +454,21 @@ input CreateBookingInput {
   segments: [BookingSegmentInput!]!
   contactEmail: String!
   contactPhone: String!
+  emergencyContactName: String
+  emergencyContactPhone: String
+  homeAddress: String
   passengers: [PassengerInput!]!
   promoCode: String
   idempotencyKey: String
+}
+
+input UpdateBookingContactInput {
+  pnr: String!
+  contactPhone: String!
+  contactEmail: String
+  emergencyContactName: String
+  emergencyContactPhone: String
+  homeAddress: String
 }
 
 input SeatSelectionInput {
@@ -465,6 +491,141 @@ input LoginInput {
 }
 
 # ─────────────────────────────────────────────────────────────
+# Admin
+# ─────────────────────────────────────────────────────────────
+
+type AdminStats {
+  users: Int!
+  bookings: Int!
+  confirmedBookings: Int!
+  cancelledBookings: Int!
+  ticketsIssued: Int!
+  """Settled revenue in minor units."""
+  revenueMinor: Money!
+  currency: String!
+  pendingRefunds: Int!
+  flightsToday: Int!
+}
+
+type AdminUser {
+  id: ID!
+  email: String!
+  firstName: String!
+  lastName: String!
+  phone: String
+  role: UserRole!
+  createdAt: DateTime!
+  lastLoginAt: DateTime
+  """Set while the account is locked after repeated failed logins."""
+  lockedUntil: DateTime
+  bookingCount: Int!
+}
+
+type AdminBooking {
+  pnr: String!
+  status: BookingStatus!
+  createdAt: DateTime!
+  contactEmail: String!
+  passengerCount: Int!
+  currency: String!
+  totalMinor: Money!
+  """Null for a guest booking that was never linked to an account."""
+  ownerEmail: String
+}
+
+type AdminTicket {
+  id: ID!
+  ticketNumber: String!
+  status: TicketStatus!
+  bookingPnr: String!
+  passengerName: String!
+  issuedAt: DateTime
+  createdAt: DateTime!
+}
+
+type Category {
+  id: ID!
+  slug: String!
+  name: String!
+  description: String
+  parentId: ID
+  sortOrder: Int!
+  isActive: Boolean!
+  productCount: Int!
+}
+
+type Product {
+  id: ID!
+  sku: String!
+  name: String!
+  description: String
+  priceMinor: Money!
+  currency: String!
+  kind: ProductKind!
+  categoryId: ID!
+  categoryName: String!
+  isActive: Boolean!
+}
+
+type SalesPoint {
+  """ISO date, `YYYY-MM-DD`."""
+  bucket: String!
+  bookings: Int!
+  revenueMinor: Money!
+}
+
+type RouteSales {
+  origin: String!
+  destination: String!
+  bookings: Int!
+  revenueMinor: Money!
+}
+
+type StatusCount {
+  status: String!
+  count: Int!
+}
+
+type SalesReport {
+  currency: String!
+  totalRevenueMinor: Money!
+  totalBookings: Int!
+  averageOrderMinor: Money!
+  byDay: [SalesPoint!]!
+  topRoutes: [RouteSales!]!
+  byStatus: [StatusCount!]!
+}
+
+input UpsertCategoryInput {
+  slug: String!
+  name: String!
+  description: String
+  """Parent category slug, for a subcategory."""
+  parentSlug: String
+  sortOrder: Int
+  isActive: Boolean
+}
+
+input UpsertProductInput {
+  sku: String!
+  name: String!
+  description: String
+  priceMinor: Money!
+  currency: String
+  kind: ProductKind
+  categoryId: ID!
+  isActive: Boolean
+}
+
+input IssueTicketInput {
+  bookingPnr: String!
+  segmentId: ID!
+  passengerId: ID!
+  """13-digit airline accounting number."""
+  ticketNumber: String!
+}
+
+# ─────────────────────────────────────────────────────────────
 # Queries
 # ─────────────────────────────────────────────────────────────
 
@@ -478,6 +639,15 @@ type Query {
   bookingEvents(pnr: String!): [BookingEvent!]!
   airports(query: String!): [Airport!]!
   airlines: [Airline!]!
+
+  # ── Admin (ADMIN/AGENT only) ──
+  adminStats: AdminStats!
+  adminUsers(search: String, role: UserRole, page: Int): [AdminUser!]!
+  adminBookings(status: BookingStatus, search: String, page: Int): [AdminBooking!]!
+  adminTickets(status: TicketStatus, search: String, page: Int): [AdminTicket!]!
+  categories: [Category!]!
+  products(categoryId: ID): [Product!]!
+  salesReport(days: Int): SalesReport!
 }
 
 # ─────────────────────────────────────────────────────────────
@@ -492,6 +662,7 @@ type Mutation {
 
   createBooking(input: CreateBookingInput!): Booking!
   updatePassengers(pnr: String!, passengers: [PassengerInput!]!): Booking!
+  updateBookingContact(input: UpdateBookingContactInput!): Booking!
   selectSeats(pnr: String!, selections: [SeatSelectionInput!]!): Booking!
   confirmBooking(pnr: String!): Booking!
   cancelBooking(pnr: String!, reason: String): Booking!
@@ -502,4 +673,14 @@ type Mutation {
 
   requestRefund(pnr: String!, reason: String, amount: Money): Refund!
   checkIn(pnr: String!, passengerId: ID!): BoardingPass!
+
+  # ── Admin (ADMIN/AGENT only) ──
+  setUserRole(userId: ID!, role: UserRole!): AdminUser!
+  unlockUser(userId: ID!): Boolean!
+  issueTicket(input: IssueTicketInput!): AdminTicket!
+  voidTicket(ticketId: ID!): Boolean!
+  upsertCategory(input: UpsertCategoryInput!): Category!
+  deleteCategory(id: ID!): Boolean!
+  upsertProduct(input: UpsertProductInput!): Product!
+  deleteProduct(id: ID!): Boolean!
 }

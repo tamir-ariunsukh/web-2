@@ -85,6 +85,9 @@ export async function createBooking(
           currency: priced.currency,
           contactEmail: input.contactEmail,
           contactPhone: input.contactPhone,
+          emergencyContactName: input.emergencyContactName ?? null,
+          emergencyContactPhone: input.emergencyContactPhone ?? null,
+          homeAddress: input.homeAddress ?? null,
           expiresAt: new Date(Date.now() + DEFAULT_HOLD_MINUTES * 60_000),
           idempotencyKey: input.idempotencyKey ?? null,
           source: user ? 'web' : 'guest',
@@ -475,4 +478,86 @@ export async function cancelBooking(
     privileged: isPrivileged(context),
     message: reason,
   });
+}
+
+export interface ContactUpdate {
+  readonly contactPhone?: string | undefined;
+  readonly contactEmail?: string | undefined;
+  readonly emergencyContactName?: string | undefined;
+  readonly emergencyContactPhone?: string | undefined;
+  readonly homeAddress?: string | undefined;
+}
+
+/**
+ * Amends the contact details on a booking the caller is allowed to edit.
+ *
+ * Unlike seats and passengers this is not restricted to HELD bookings: reaching
+ * the traveller is just as important after ticketing, so a confirmed or ticketed
+ * booking can still be corrected. Only a cancelled or expired booking is frozen.
+ */
+export async function updateBookingContact(
+  context: GraphQLContext,
+  pnr: string,
+  update: ContactUpdate,
+): Promise<void> {
+  const { prisma, logger, user } = context;
+
+  const booking = await prisma.booking.findUnique({
+    where: { pnr },
+    select: { pnr: true, status: true, userId: true },
+  });
+  if (!booking) {
+    throw new CorsairError(ErrorCode.BOOKING_NOT_FOUND, `Booking ${pnr} was not found`);
+  }
+
+  // A guest booking has no owner; the PNR itself is the credential, matching
+  // how booking reads behave. Staff may edit any booking.
+  const isOwner = user?.id !== undefined && user.id === booking.userId;
+  if (booking.userId !== null && !isOwner && !isPrivileged(context)) {
+    throw new CorsairError(
+      ErrorCode.FORBIDDEN,
+      'You do not have access to this booking',
+    );
+  }
+
+  const frozen: BookingStatus[] = [BookingStatus.CANCELLED, BookingStatus.EXPIRED];
+  if (frozen.includes(booking.status)) {
+    throw new CorsairError(
+      ErrorCode.INVALID_STATE_TRANSITION,
+      `Booking ${pnr} is ${booking.status} and its contact details cannot be changed`,
+    );
+  }
+
+  const data = {
+    ...(update.contactPhone !== undefined ? { contactPhone: update.contactPhone } : {}),
+    ...(update.contactEmail !== undefined ? { contactEmail: update.contactEmail } : {}),
+    ...(update.emergencyContactName !== undefined
+      ? { emergencyContactName: update.emergencyContactName }
+      : {}),
+    ...(update.emergencyContactPhone !== undefined
+      ? { emergencyContactPhone: update.emergencyContactPhone }
+      : {}),
+    ...(update.homeAddress !== undefined ? { homeAddress: update.homeAddress } : {}),
+  };
+
+  if (Object.keys(data).length === 0) {
+    throw new CorsairError(ErrorCode.VALIDATION_FAILED, 'No contact details were supplied');
+  }
+
+  await prisma.$transaction([
+    prisma.booking.update({ where: { pnr }, data }),
+    prisma.bookingEvent.create({
+      data: {
+        bookingPnr: pnr,
+        fromStatus: booking.status,
+        toStatus: booking.status,
+        actorType: user ? 'customer' : 'guest',
+        actorId: user?.id ?? null,
+        // Field names only - the values are personal data and must not be logged.
+        message: `Contact details updated: ${Object.keys(data).join(', ')}`,
+      },
+    }),
+  ]);
+
+  logger.info({ pnr, fields: Object.keys(data) }, 'booking contact details updated');
 }

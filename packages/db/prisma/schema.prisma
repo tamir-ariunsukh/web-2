@@ -471,6 +471,12 @@ model Booking {
   contactEmail String @db.Citext
   contactPhone String
 
+  /// Emergency contact and home address, collected so the airline can reach
+  /// someone if the traveller cannot be contacted directly.
+  emergencyContactName  String?
+  emergencyContactPhone String?
+  homeAddress           String?
+
   /// Set for HELD and PENDING_PAYMENT; the expiry worker releases seats after this.
   expiresAt          DateTime?
   /// Set when the hold is confirmed.
@@ -847,4 +853,69 @@ model WebhookEvent {
   @@unique([provider, externalId])
   @@index([processedAt, createdAt])
   @@map("webhook_events")
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Admin-managed catalogue (taxonomy)
+// ═══════════════════════════════════════════════════════════════
+
+/// Admin-defined grouping for sellable extras. Self-referencing so a category
+/// can have subcategories without a separate join table.
+model Category {
+  id          String  @id @default(uuid()) @db.Uuid
+  slug        String  @unique
+  name        String
+  description String?
+
+  parentId String?   @db.Uuid
+  parent   Category? @relation("CategoryTree", fields: [parentId], references: [id])
+  children Category[] @relation("CategoryTree")
+
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  products Product[]
+
+  @@index([parentId, sortOrder])
+  @@map("categories")
+}
+
+enum ProductKind {
+  SEAT
+  BAGGAGE
+  INSURANCE
+  MEAL
+  LOUNGE
+  OTHER
+}
+
+/// A sellable extra the admin maintains. Kept separate from `fares`, which are
+/// provider-supplied and read-only.
+model Product {
+  id   String @id @default(uuid()) @db.Uuid
+  sku  String @unique
+  name String
+
+  description String?
+  /// Price in minor units, matching how fares are stored.
+  price    Int
+  currency String @default("USD") @db.VarChar(3)
+
+  kind ProductKind @default(OTHER)
+
+  categoryId String   @db.Uuid
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  isActive Boolean @default(true)
+  /// Null for unlimited stock, which is the common case for services.
+  stock    Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([categoryId, isActive])
+  @@map("products")
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { flightSearchSchema, passengerCountSchema, passengerSchema, createBookingSchema } from '../schemas.js';
+import { flightSearchSchema, passengerCountSchema, passengerSchema, createBookingSchema, updateBookingContactSchema, addressSchema } from '../schemas.js';
 
 const ADULT = {
   type: 'ADULT' as const,
@@ -161,5 +161,93 @@ describe('booking creation', () => {
       idempotencyKey: 'short',
     });
     expect(result.success).toBe(false);
+  });
+
+  it('accepts emergency contact and home address alongside the booking', () => {
+    const result = createBookingSchema.safeParse({
+      segments: [segment],
+      contactEmail: 'a@b.com',
+      contactPhone: '+97699112233',
+      emergencyContactName: 'Dulmaa Bat',
+      emergencyContactPhone: '+976 8800-1122',
+      homeAddress: '12 Sukhbaatar Ave, Apt 4, Ulaanbaatar',
+      passengers: [ADULT],
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.emergencyContactPhone).toBe('+97688001122');
+      expect(result.data.homeAddress).toBe('12 Sukhbaatar Ave, Apt 4, Ulaanbaatar');
+    }
+  });
+});
+
+describe('booking contact updates', () => {
+  it('accepts a phone-only amendment', () => {
+    const result = updateBookingContactSchema.safeParse({
+      pnr: 'h3k9pm',
+      contactPhone: '+976 9911-2233',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.pnr).toBe('H3K9PM');
+      expect(result.data.contactPhone).toBe('+97699112233');
+    }
+  });
+
+  it('accepts a full emergency contact with address', () => {
+    const result = updateBookingContactSchema.safeParse({
+      pnr: 'H3K9PM',
+      contactPhone: '+97699112233',
+      emergencyContactName: 'Dulmaa Bat',
+      emergencyContactPhone: '+97688001122',
+      homeAddress: "45 Peace Ave, Block B, Ulaanbaatar",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects an emergency contact name without a phone', () => {
+    const result = updateBookingContactSchema.safeParse({
+      pnr: 'H3K9PM',
+      contactPhone: '+97699112233',
+      emergencyContactName: 'Dulmaa Bat',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects an emergency contact phone without a name', () => {
+    const result = updateBookingContactSchema.safeParse({
+      pnr: 'H3K9PM',
+      contactPhone: '+97699112233',
+      emergencyContactPhone: '+97688001122',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a malformed PNR', () => {
+    const result = updateBookingContactSchema.safeParse({
+      pnr: 'nope',
+      contactPhone: '+97699112233',
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('address', () => {
+  it('trims surrounding whitespace', () => {
+    const result = addressSchema.safeParse('  12 Sukhbaatar Ave  ');
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data).toBe('12 Sukhbaatar Ave');
+  });
+
+  it('accepts Cyrillic addresses', () => {
+    expect(addressSchema.safeParse('Баянзүрх дүүрэг, 5-р хороо, 12-р байр').success).toBe(true);
+  });
+
+  it('rejects a too-short address', () => {
+    expect(addressSchema.safeParse('ab').success).toBe(false);
+  });
+
+  it('rejects control characters', () => {
+    expect(addressSchema.safeParse('Main\u0000Street 12').success).toBe(false);
   });
 });

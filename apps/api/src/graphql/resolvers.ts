@@ -4,6 +4,7 @@ import {
   ErrorCode,
   flightSearchSchema,
   createBookingSchema,
+  updateBookingContactSchema,
   registerSchema,
   loginSchema,
   mockPaymentOutcomeSchema,
@@ -16,8 +17,25 @@ import { GraphQLError, GraphQLScalarType, Kind  } from 'graphql';
 
 
 
+import {
+  adminStats,
+  deleteCategory,
+  deleteProduct,
+  issueTicket,
+  listBookings,
+  listCategories,
+  listProducts,
+  listTickets,
+  listUsers,
+  salesReport,
+  setUserRole,
+  unlockUser,
+  upsertCategory,
+  upsertProduct,
+  voidTicket,
+} from '../modules/admin/admin-service.js';
 import { login, register, refreshSession, logout } from '../modules/auth/auth-service.js';
-import { createBooking, selectSeats, transitionBooking, cancelBooking } from '../modules/booking/booking-service.js';
+import { createBooking, selectSeats, transitionBooking, cancelBooking, updateBookingContact } from '../modules/booking/booking-service.js';
 import { requireUser, isPrivileged } from '../modules/context.js';
 import { searchFlights } from '../modules/flights/search-service.js';
 import {
@@ -249,6 +267,83 @@ export const resolvers = {
 
     airlines: async (_parent: unknown, _args: unknown, context: GraphQLContext) =>
       context.prisma.airline.findMany({ where: { isActive: true }, take: 100 }),
+
+    // ── Admin: every entry point re-checks the role in the service layer ──
+    adminStats: async (_parent: unknown, _args: unknown, context: GraphQLContext) => {
+      try {
+        return await adminStats(context);
+      } catch (error) {
+        fail(error);
+      }
+    },
+
+    adminUsers: async (
+      _parent: unknown,
+      args: { search?: string; role?: string; page?: number },
+      context: GraphQLContext,
+    ) => {
+      try {
+        return await listUsers(context, args);
+      } catch (error) {
+        fail(error);
+      }
+    },
+
+    adminBookings: async (
+      _parent: unknown,
+      args: { status?: string; search?: string; page?: number },
+      context: GraphQLContext,
+    ) => {
+      try {
+        return await listBookings(context, args);
+      } catch (error) {
+        fail(error);
+      }
+    },
+
+    adminTickets: async (
+      _parent: unknown,
+      args: { status?: string; search?: string; page?: number },
+      context: GraphQLContext,
+    ) => {
+      try {
+        return await listTickets(context, args);
+      } catch (error) {
+        fail(error);
+      }
+    },
+
+    categories: async (_parent: unknown, _args: unknown, context: GraphQLContext) => {
+      try {
+        return await listCategories(context);
+      } catch (error) {
+        fail(error);
+      }
+    },
+
+    products: async (
+      _parent: unknown,
+      args: { categoryId?: string },
+      context: GraphQLContext,
+    ) => {
+      try {
+        return await listProducts(context, args);
+      } catch (error) {
+        fail(error);
+      }
+    },
+
+    salesReport: async (
+      _parent: unknown,
+      args: { days?: number },
+      context: GraphQLContext,
+    ) => {
+      try {
+        return await salesReport(context, args);
+      } catch (error) {
+        fail(error);
+      }
+    },
   },
 
   Mutation: {
@@ -316,6 +411,29 @@ export const resolvers = {
       }
       try {
         const pnr = await createBooking(context, parsed.data);
+        return context.prisma.booking.findUnique({ where: { pnr } });
+      } catch (error) {
+        fail(error);
+      }
+    },
+
+    updateBookingContact: async (
+      _parent: unknown,
+      args: { input: unknown },
+      context: GraphQLContext,
+    ) => {
+      const parsed = updateBookingContactSchema.safeParse(args.input);
+      if (!parsed.success) {
+        throw new GraphQLError('Invalid contact details', {
+          extensions: {
+            code: ErrorCode.VALIDATION_FAILED,
+            details: parsed.error.flatten().fieldErrors,
+          },
+        });
+      }
+      try {
+        const { pnr, ...update } = parsed.data;
+        await updateBookingContact(context, pnr, update);
         return context.prisma.booking.findUnique({ where: { pnr } });
       } catch (error) {
         fail(error);
@@ -410,6 +528,98 @@ export const resolvers = {
     ) => {
       try {
         return await checkIn(context, args.pnr, args.passengerId);
+      } catch (error) {
+        fail(error);
+      }
+    },
+
+    // ── Admin ──
+    setUserRole: async (
+      _parent: unknown,
+      args: { userId: string; role: string },
+      context: GraphQLContext,
+    ) => {
+      try {
+        return await setUserRole(context, args.userId, args.role);
+      } catch (error) {
+        fail(error);
+      }
+    },
+
+    unlockUser: async (_parent: unknown, args: { userId: string }, context: GraphQLContext) => {
+      try {
+        return await unlockUser(context, args.userId);
+      } catch (error) {
+        fail(error);
+      }
+    },
+
+    issueTicket: async (
+      _parent: unknown,
+      args: {
+        input: {
+          bookingPnr: string;
+          segmentId: string;
+          passengerId: string;
+          ticketNumber: string;
+        };
+      },
+      context: GraphQLContext,
+    ) => {
+      try {
+        return await issueTicket(context, args.input);
+      } catch (error) {
+        fail(error);
+      }
+    },
+
+    voidTicket: async (_parent: unknown, args: { ticketId: string }, context: GraphQLContext) => {
+      try {
+        return await voidTicket(context, args.ticketId);
+      } catch (error) {
+        fail(error);
+      }
+    },
+
+    upsertCategory: async (
+      _parent: unknown,
+      args: { input: Parameters<typeof upsertCategory>[1] },
+      context: GraphQLContext,
+    ) => {
+      try {
+        return await upsertCategory(context, args.input);
+      } catch (error) {
+        fail(error);
+      }
+    },
+
+    deleteCategory: async (
+      _parent: unknown,
+      args: { id: string },
+      context: GraphQLContext,
+    ) => {
+      try {
+        return await deleteCategory(context, args.id);
+      } catch (error) {
+        fail(error);
+      }
+    },
+
+    upsertProduct: async (
+      _parent: unknown,
+      args: { input: Parameters<typeof upsertProduct>[1] },
+      context: GraphQLContext,
+    ) => {
+      try {
+        return await upsertProduct(context, args.input);
+      } catch (error) {
+        fail(error);
+      }
+    },
+
+    deleteProduct: async (_parent: unknown, args: { id: string }, context: GraphQLContext) => {
+      try {
+        return await deleteProduct(context, args.id);
       } catch (error) {
         fail(error);
       }

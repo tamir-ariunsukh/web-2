@@ -20,6 +20,12 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
+        // Generated art is content-addressed by name and changes only when the
+        // generator runs, so it can be cached hard.
+        source: '/img/:path*',
+        headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
+      },
+      {
         source: '/:path*',
         headers: [
           { key: 'X-Content-Type-Options', value: 'nosniff' },

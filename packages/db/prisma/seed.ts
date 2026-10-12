@@ -575,6 +575,53 @@ async function seedPromoCodes(): Promise<void> {
   }
 }
 
+async function seedTaxonomy(): Promise<void> {
+  // Categories are matched by slug so re-running the seed never duplicates them.
+  const categories = [
+    { slug: 'seats', name: 'Seat selection', description: 'Preferred and extra-legroom seats', sortOrder: 1 },
+    { slug: 'baggage', name: 'Baggage', description: 'Extra checked and cabin baggage', sortOrder: 2 },
+    { slug: 'meals', name: 'Meals', description: 'Onboard meal options', sortOrder: 3 },
+    { slug: 'insurance', name: 'Insurance', description: 'Travel and cancellation cover', sortOrder: 4 },
+    { slug: 'lounge', name: 'Lounge access', description: 'Airport lounge passes', sortOrder: 5 },
+  ] as const;
+
+  const ids = new Map<string, string>();
+  for (const category of categories) {
+    const row = await prisma.category.upsert({
+      where: { slug: category.slug },
+      update: { name: category.name, description: category.description, sortOrder: category.sortOrder },
+      create: category,
+      select: { id: true },
+    });
+    ids.set(category.slug, row.id);
+  }
+
+  const products = [
+    { sku: 'SEAT-XL', name: 'Extra legroom seat', description: 'Exit-row or bulkhead seat with more space', price: 4800, kind: 'SEAT', slug: 'seats' },
+    { sku: 'SEAT-STD', name: 'Standard seat choice', description: 'Pick any available standard seat', price: 1500, kind: 'SEAT', slug: 'seats' },
+    { sku: 'BAG-23', name: '23 kg checked bag', description: 'One additional 23 kg checked bag', price: 3500, kind: 'BAGGAGE', slug: 'baggage' },
+    { sku: 'BAG-32', name: '32 kg checked bag', description: 'One additional 32 kg checked bag', price: 5500, kind: 'BAGGAGE', slug: 'baggage' },
+    { sku: 'MEAL-VGML', name: 'Vegetarian meal', description: 'Special vegetarian meal', price: 1200, kind: 'MEAL', slug: 'meals' },
+    { sku: 'MEAL-HLML', name: 'Halal meal', description: 'Special halal meal', price: 1200, kind: 'MEAL', slug: 'meals' },
+    { sku: 'INS-TRAVEL', name: 'Travel insurance', description: 'Trip cancellation and medical cover', price: 2900, kind: 'INSURANCE', slug: 'insurance' },
+    { sku: 'LOUNGE-PASS', name: 'Lounge pass', description: 'Single-visit airport lounge pass', price: 3900, kind: 'LOUNGE', slug: 'lounge' },
+  ] as const;
+
+  for (const product of products) {
+    const categoryId = ids.get(product.slug);
+    if (!categoryId) continue;
+
+    const { slug: _slug, ...fields } = product;
+    await prisma.product.upsert({
+      where: { sku: product.sku },
+      update: { ...fields, categoryId },
+      create: { ...fields, categoryId },
+    });
+  }
+
+  console.log(`  categories: ${categories.length}, products: ${products.length}`);
+}
+
 async function seedDemoUsers(): Promise<void> {
   // Hashes are for the literal password `DemoPassword123!`, documented in README.
   // Seeding real credentials would be a deployment hazard, so this is dev-only.
@@ -623,6 +670,7 @@ export async function seed(): Promise<void> {
 
   await seedFlights(airportIds, airlineIds, layoutIds);
   await seedPromoCodes();
+  await seedTaxonomy();
   await seedDemoUsers();
 
   console.log('Seed complete.');

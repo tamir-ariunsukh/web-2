@@ -5,5 +5,7 @@
  * tokens stay in one place.
  */
 
-/* Tailwind v4 scans source files for class names, including workspace packages. */
-@source '../../../../packages/ui/src';
+/* Tailwind v4 scans source files for class names, including workspace packages.
+ * The path is relative to this file (apps/web/app), so three levels reach the
+ * repository root. */
+@source '../../../packages/ui/src';

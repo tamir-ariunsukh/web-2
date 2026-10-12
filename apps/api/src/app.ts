@@ -90,6 +90,8 @@ export async function createApp(dependencies: AppDependencies = {}): Promise<Bui
     formatError: (formatted) => {
       const original = formatted.extensions?.originalError;
 
+      // A domain error thrown anywhere in the resolver chain is safe to expose;
+      // the taxonomy decides which codes reach the client.
       if (isCorsairError(original)) {
         return {
           ...formatted,

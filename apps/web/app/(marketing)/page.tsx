@@ -1,6 +1,7 @@
 
 import { Card, CardBody, CardHeader } from '@repo/ui';
 
+import { HeroBanner } from '../../components/hero-banner';
 import { SearchForm } from '../../components/search-form';
 
 import type { Metadata } from 'next';
@@ -9,20 +10,28 @@ export const metadata: Metadata = {
   title: 'Find your next flight',
   description:
     'Search flights, pick your seat and get your ticket instantly. Refunds handled automatically.',
+  openGraph: {
+    title: 'Find your next flight',
+    description: 'Search flights, pick your seat and get your ticket instantly.',
+    images: [{ url: '/img/og.png', width: 1200, height: 628 }],
+  },
 };
 
 export default function HomePage(): React.JSX.Element {
   return (
-    <main className="mx-auto flex w-full max-w-5xl flex-col gap-10 px-4 py-12 sm:py-20">
-      <section className="flex flex-col gap-3">
-        <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-          Where are you flying?
-        </h1>
-        <p className="max-w-2xl text-slate-600 dark:text-slate-400">
-          Compare fares, choose your seat on a live seat map, and get your boarding pass the
-          moment payment clears.
-        </p>
-      </section>
+    <main className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 py-8 sm:py-12">
+      {/* The banner is the LCP element, but it is deliberately NOT preloaded.
+          The <picture> sits in the first HTML response, so the preload scanner
+          already discovers its AVIF source immediately, and `fetchPriority` on the
+          <img> carries the priority hint. A separate <link rel=preload> resolves
+          the URL independently of <picture>, so any mismatch in `sizes` or format
+          negotiation makes the browser fetch the preloaded frame and then fetch
+          the real one as well - an extra download on every visit. */}
+      <HeroBanner
+        eyebrow="Fly smarter"
+        title="Where are you flying?"
+        subtitle="Compare fares, choose your seat on a live seat map, and get your boarding pass the moment payment clears."
+      />
 
       <Card>
         <CardHeader>

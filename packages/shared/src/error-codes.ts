@@ -114,6 +114,10 @@ export function toGraphQLCode(code: ErrorCode): string {
 
 /** Error codes that represent a client mistake and must not be retried as-is. */
 export const CLIENT_ERROR_CODES = new Set<ErrorCode>([
+  ErrorCode.UNAUTHENTICATED,
+  ErrorCode.FORBIDDEN,
+  ErrorCode.TOKEN_EXPIRED,
+  ErrorCode.TOKEN_REVOKED,
   ErrorCode.VALIDATION_FAILED,
   ErrorCode.INVALID_CREDENTIALS,
   ErrorCode.EMAIL_ALREADY_REGISTERED,

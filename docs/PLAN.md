@@ -100,7 +100,8 @@ Fare            — flightId, fareClassId, basePrice, taxes,
                   currency, seatsAvailable
 Seat            — flightId, seatNo, cabin, class, status, price
 Booking         — pnr (unique 6-char), userId, status, totalAmount,
-                  currency, expiresAt, contactEmail, contactPhone
+                  currency, expiresAt, contactEmail, contactPhone,
+                  emergencyContactName, emergencyContactPhone, homeAddress
 BookingSegment  — bookingId, flightId, fareId, sequence
 Passenger       — bookingId, type (ADT/CHD/INF), firstName, lastName,
                   dob, gender, passportNo, passportExpiry, nationality
@@ -365,10 +366,13 @@ export interface FlightProvider {
 - [x] Нислэгийн карт — airport-local цаг, duration, "seats left" анхааруулга
 - [x] `SeatMap` компонент — interactive, keyboard accessible, live status
 - [x] Tailwind v4 design tokens, dark mode, reduced-motion
-- [ ] Booking wizard (зорчигч → суудал → төлбөр) — хуудсууд дутуу
-- [ ] Миний захиалга — жагсаалт, дэлгэрэнгүй, цуцлалт
-- [ ] Auth хуудсууд (register/login)
-- [ ] Filter, sort UI
+- [x] Booking wizard (зорчигч → суудал → төлбөр) — `/booking/[flightId]`, API-аар дамжиж DB-д бичнэ
+- [x] Миний захиалга — `myBookings` query, дэлгэрэнгүй + цуцлалт (`cancelBooking`)
+- [x] Auth хуудсууд — `/register`, `/login`, httpOnly cookie session, header-т хэрэглэгч
+- [x] Filter, sort UI — airline, үнэ, departure window, duration, refundable; 5 төрлийн эрэмбэ
+- [x] API унасан үед JSON snapshot руу автоматаар шилжих (banner-тай)
+- [ ] Filter-ийг API руу дамжуулах (`FlightFiltersInput` одоогоор хэрэгждэггүй, клиент дээр шүүнэ)
+- [ ] Promo code, updatePassengers UI
 
 **Гарах шалгуур:** Lighthouse ≥ 90, Playwright E2E booking flow ногоон.
 
@@ -377,9 +381,15 @@ export interface FlightProvider {
 - [x] Provider abstraction — `FlightProvider` interface, `ProviderRegistry`, fallback
 - [x] `MockProvider` — seeded catalog, health check, hold/issue/void
 - [x] Provider error type + retryable classifier
+- [x] Admin API — `adminStats`, `adminUsers`, `adminBookings`, `adminTickets`, `salesReport`
+- [x] Admin UI — dashboard, хэрэглэгч, захиалга, тийз, ангилал, тайлан (`/admin/*`)
+- [x] Role guard — `requireRole(ADMIN/AGENT)` service layer-т, UI-д redirect; `UNAUTHENTICATED`/`FORBIDDEN` код зөв буцна
+- [x] Taxonomy — `Category` (self-referencing) + `Product` model, CRUD + seed
+- [x] Ticket issue/void — payment webhook амжилтгүй үед гараар олгох
+- [x] Audit log — role change, ticket, category/product үйлдэл бүрт бичнэ
 - [ ] Duffel / Amadeus adapter
-- [ ] Admin panel: flight CRUD, booking хяналт, refund approve, audit log
-- [x] Promo code model + seed (engine ажиллуулах дутуу)
+- [ ] Promo code engine (model + seed бэлэн)
+- [ ] PDF ticket + QR, имэйл илгээлт
 
 **Баталгаажсан:** mock provider-ээр хайлт/захиалга бүрэн ажилласан. Fallback логик бэлэн.
 

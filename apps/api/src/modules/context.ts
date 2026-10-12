@@ -1,3 +1,4 @@
+import { CorsairError, ErrorCode } from '@repo/shared';
 
 import type { Env } from '../env.js';
 import type { Loaders } from './loaders.js';
@@ -34,19 +35,16 @@ export interface GraphQLContext {
 /** Narrows the context to require an authenticated user. */
 export function requireUser(context: GraphQLContext): AuthUser {
   if (!context.user) {
-    throw new Error('UNAUTHENTICATED');
+    throw new CorsairError(ErrorCode.UNAUTHENTICATED, 'You must be signed in');
   }
   return context.user;
 }
 
 /** Narrows the context to require one of the given roles. */
-export function requireRole(
-  context: GraphQLContext,
-  ...roles: readonly UserRole[]
-): AuthUser {
+export function requireRole(context: GraphQLContext, ...roles: readonly UserRole[]): AuthUser {
   const user = requireUser(context);
   if (!roles.includes(user.role)) {
-    throw new Error('FORBIDDEN');
+    throw new CorsairError(ErrorCode.FORBIDDEN, 'You do not have access to this resource');
   }
   return user;
 }

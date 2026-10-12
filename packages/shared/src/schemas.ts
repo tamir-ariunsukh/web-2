@@ -57,6 +57,17 @@ export const pnrSchema = z
   .toUpperCase()
   .regex(/^[A-Z0-9]{6}$/, 'PNR must be 6 alphanumeric characters');
 
+/**
+ * Free-form street address. Deliberately permissive: address formats vary by
+ * country, so only length and printable characters are constrained.
+ */
+export const addressSchema = z
+  .string()
+  .trim()
+  .min(3, 'Address is too short')
+  .max(240, 'Address is too long')
+  .regex(/^[\p{L}\p{N}\s,.\-#/()'"]+$/u, 'Address contains invalid characters');
+
 /** Passport / national ID number. Kept permissive to accommodate foreign formats. */
 export const passportNumberSchema = z
   .string()
@@ -227,6 +238,10 @@ export const createBookingSchema = z.object({
     .max(8, 'An itinerary may contain at most 8 segments'),
   contactEmail: emailSchema,
   contactPhone: phoneSchema,
+  /** Optional at booking time; collected on the booking page when needed. */
+  emergencyContactName: z.string().trim().min(2).max(120).optional(),
+  emergencyContactPhone: phoneSchema.optional(),
+  homeAddress: addressSchema.optional(),
   passengers: z.array(passengerSchema).min(1).max(9),
   promoCode: z
     .string()
@@ -241,6 +256,34 @@ export const createBookingSchema = z.object({
 });
 
 export type CreateBookingInput = z.infer<typeof createBookingSchema>;
+
+/**
+ * Contact details a traveller can amend on an existing booking.
+ *
+ * A name and phone must be supplied together: the point of the emergency contact
+ * is that the airline can actually reach someone, so half a contact is worse than
+ * none and is rejected.
+ */
+export const updateBookingContactSchema = z
+  .object({
+    pnr: pnrSchema,
+    contactPhone: phoneSchema,
+    contactEmail: emailSchema.optional(),
+    emergencyContactName: z.string().trim().min(2).max(120).optional(),
+    emergencyContactPhone: phoneSchema.optional(),
+    homeAddress: addressSchema.optional(),
+  })
+  .refine(
+    (value) =>
+      (value.emergencyContactName === undefined) ===
+      (value.emergencyContactPhone === undefined),
+    {
+      message: 'Emergency contact name and phone must be provided together',
+      path: ['emergencyContactPhone'],
+    },
+  );
+
+export type UpdateBookingContactInput = z.infer<typeof updateBookingContactSchema>;
 
 export const updatePassengersSchema = z.object({
   bookingId: uuidSchema,
