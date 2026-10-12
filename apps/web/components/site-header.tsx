@@ -28,6 +28,15 @@ export function SiteHeader({ user }: SiteHeaderProps): React.JSX.Element {
             <li>
               <NavLink href="/">Search</NavLink>
             </li>
+            <li className="hidden md:block">
+              <NavLink href="/about">Бидний тухай</NavLink>
+            </li>
+            <li className="hidden md:block">
+              <NavLink href="/news">Мэдээ</NavLink>
+            </li>
+            <li className="hidden md:block">
+              <NavLink href="/contact">Холбоо барих</NavLink>
+            </li>
             <li>
               <NavLink href="/my-bookings">My bookings</NavLink>
             </li>

@@ -1,3 +1,4 @@
+import { SiteFooter } from '../components/site-footer';
 import { SiteHeader } from '../components/site-header';
 import { getSession } from '../lib/auth';
 
@@ -34,9 +35,10 @@ export default async function RootLayout({
 
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className="min-h-dvh">
+      <body className="flex min-h-dvh flex-col">
         <SiteHeader user={user} />
-        {children}
+        <div className="flex-1">{children}</div>
+        <SiteFooter />
       </body>
     </html>
   );
