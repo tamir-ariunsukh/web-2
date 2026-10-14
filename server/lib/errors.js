@@ -1,0 +1,159 @@
+/**
+ * Canonical error codes and the domain error class.
+ *
+ * Every failure that crosses the HTTP boundary carries one of these codes so
+ * clients branch on a stable identifier rather than on message text. Codes are
+ * append-only — never repurpose one.
+ */
+
+export const ErrorCode = {
+  INTERNAL_ERROR: 'INTERNAL_ERROR',
+  VALIDATION_FAILED: 'VALIDATION_FAILED',
+  NOT_FOUND: 'NOT_FOUND',
+  CONFLICT: 'CONFLICT',
+  RATE_LIMITED: 'RATE_LIMITED',
+
+  UNAUTHENTICATED: 'UNAUTHENTICATED',
+  FORBIDDEN: 'FORBIDDEN',
+  INVALID_CREDENTIALS: 'INVALID_CREDENTIALS',
+  EMAIL_ALREADY_REGISTERED: 'EMAIL_ALREADY_REGISTERED',
+  TOKEN_EXPIRED: 'TOKEN_EXPIRED',
+  TOKEN_REVOKED: 'TOKEN_REVOKED',
+  ACCOUNT_LOCKED: 'ACCOUNT_LOCKED',
+
+  INVALID_ROUTE: 'INVALID_ROUTE',
+  NO_FLIGHTS_FOUND: 'NO_FLIGHTS_FOUND',
+  INVALID_DATE_RANGE: 'INVALID_DATE_RANGE',
+  PROVIDER_UNAVAILABLE: 'PROVIDER_UNAVAILABLE',
+  PROVIDER_RATE_LIMITED: 'PROVIDER_RATE_LIMITED',
+
+  SEAT_NOT_FOUND: 'SEAT_NOT_FOUND',
+  SEAT_ALREADY_TAKEN: 'SEAT_ALREADY_TAKEN',
+  SEAT_NOT_AVAILABLE_FOR_CABIN: 'SEAT_NOT_AVAILABLE_FOR_CABIN',
+  SEAT_COUNT_MISMATCH: 'SEAT_COUNT_MISMATCH',
+  INFANT_ON_LAP_NO_SEAT: 'INFANT_ON_LAP_NO_SEAT',
+
+  BOOKING_NOT_FOUND: 'BOOKING_NOT_FOUND',
+  BOOKING_EXPIRED: 'BOOKING_EXPIRED',
+  INVALID_STATE_TRANSITION: 'INVALID_STATE_TRANSITION',
+  FARE_NO_LONGER_AVAILABLE: 'FARE_NO_LONGER_AVAILABLE',
+  PROMO_CODE_INVALID: 'PROMO_CODE_INVALID',
+  PROMO_CODE_EXPIRED: 'PROMO_CODE_EXPIRED',
+  PASSENGER_MISMATCH: 'PASSENGER_MISMATCH',
+
+  PAYMENT_NOT_FOUND: 'PAYMENT_NOT_FOUND',
+  PAYMENT_FAILED: 'PAYMENT_FAILED',
+  PAYMENT_ALREADY_COMPLETED: 'PAYMENT_ALREADY_COMPLETED',
+  AMOUNT_MISMATCH: 'AMOUNT_MISMATCH',
+  INVALID_WEBHOOK_SIGNATURE: 'INVALID_WEBHOOK_SIGNATURE',
+  REFUND_NOT_ALLOWED: 'REFUND_NOT_ALLOWED',
+  REFUND_AMOUNT_EXCEEDS_PAYMENT: 'REFUND_AMOUNT_EXCEEDS_PAYMENT',
+
+  TICKET_ISSUANCE_FAILED: 'TICKET_ISSUANCE_FAILED',
+  TICKET_ALREADY_ISSUED: 'TICKET_ALREADY_ISSUED',
+};
+
+/** Stable mapping from error code to HTTP status. */
+export const ERROR_HTTP_STATUS = {
+  INTERNAL_ERROR: 500,
+  VALIDATION_FAILED: 400,
+  NOT_FOUND: 404,
+  CONFLICT: 409,
+  RATE_LIMITED: 429,
+
+  UNAUTHENTICATED: 401,
+  FORBIDDEN: 403,
+  INVALID_CREDENTIALS: 401,
+  EMAIL_ALREADY_REGISTERED: 409,
+  TOKEN_EXPIRED: 401,
+  TOKEN_REVOKED: 401,
+  ACCOUNT_LOCKED: 423,
+
+  INVALID_ROUTE: 400,
+  NO_FLIGHTS_FOUND: 404,
+  INVALID_DATE_RANGE: 400,
+  PROVIDER_UNAVAILABLE: 503,
+  PROVIDER_RATE_LIMITED: 429,
+
+  SEAT_NOT_FOUND: 404,
+  SEAT_ALREADY_TAKEN: 409,
+  SEAT_NOT_AVAILABLE_FOR_CABIN: 400,
+  SEAT_COUNT_MISMATCH: 400,
+  INFANT_ON_LAP_NO_SEAT: 400,
+
+  BOOKING_NOT_FOUND: 404,
+  BOOKING_EXPIRED: 410,
+  INVALID_STATE_TRANSITION: 409,
+  FARE_NO_LONGER_AVAILABLE: 409,
+  PROMO_CODE_INVALID: 400,
+  PROMO_CODE_EXPIRED: 400,
+  PASSENGER_MISMATCH: 400,
+
+  PAYMENT_NOT_FOUND: 404,
+  PAYMENT_FAILED: 402,
+  PAYMENT_ALREADY_COMPLETED: 409,
+  AMOUNT_MISMATCH: 400,
+  INVALID_WEBHOOK_SIGNATURE: 401,
+  REFUND_NOT_ALLOWED: 409,
+  REFUND_AMOUNT_EXCEEDS_PAYMENT: 400,
+
+  TICKET_ISSUANCE_FAILED: 502,
+  TICKET_ALREADY_ISSUED: 409,
+};
+
+/** Error codes that represent a client mistake and must not be retried as-is. */
+export const CLIENT_ERROR_CODES = new Set([
+  ErrorCode.UNAUTHENTICATED,
+  ErrorCode.FORBIDDEN,
+  ErrorCode.TOKEN_EXPIRED,
+  ErrorCode.TOKEN_REVOKED,
+  ErrorCode.VALIDATION_FAILED,
+  ErrorCode.INVALID_CREDENTIALS,
+  ErrorCode.EMAIL_ALREADY_REGISTERED,
+  ErrorCode.ACCOUNT_LOCKED,
+  ErrorCode.INVALID_ROUTE,
+  ErrorCode.INVALID_DATE_RANGE,
+  ErrorCode.SEAT_NOT_AVAILABLE_FOR_CABIN,
+  ErrorCode.SEAT_COUNT_MISMATCH,
+  ErrorCode.INFANT_ON_LAP_NO_SEAT,
+  ErrorCode.PROMO_CODE_INVALID,
+  ErrorCode.PROMO_CODE_EXPIRED,
+  ErrorCode.PASSENGER_MISMATCH,
+  ErrorCode.AMOUNT_MISMATCH,
+  ErrorCode.INVALID_WEBHOOK_SIGNATURE,
+  ErrorCode.REFUND_AMOUNT_EXCEEDS_PAYMENT,
+]);
+
+/**
+ * Domain error carrying a stable code. Anything thrown as an `AppError` is
+ * expected and its message is safe to surface; every other error is redacted to
+ * `INTERNAL_ERROR` before it reaches a client.
+ */
+export class AppError extends Error {
+  constructor(code, message, options = {}) {
+    super(message);
+    this.name = 'AppError';
+    this.code = code;
+    this.status = options.status ?? ERROR_HTTP_STATUS[code] ?? 500;
+    this.details = options.details;
+    this.expose = CLIENT_ERROR_CODES.has(code);
+  }
+
+  static notFound(entity, id) {
+    return new AppError(ErrorCode.NOT_FOUND, `${entity} not found: ${id}`, {
+      details: { entity, id },
+    });
+  }
+
+  static validation(message, details) {
+    return new AppError(ErrorCode.VALIDATION_FAILED, message, details ? { details } : {});
+  }
+
+  static internal(message) {
+    return new AppError(ErrorCode.INTERNAL_ERROR, message);
+  }
+}
+
+export function isAppError(value) {
+  return value instanceof AppError;
+}

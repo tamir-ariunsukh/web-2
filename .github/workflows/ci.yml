@@ -1,4 +1,4 @@
-name: CI
+﻿name: CI
 
 on:
   push:
@@ -12,133 +12,40 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  # Turborepo remote cache is optional; the local cache keeps runs fast regardless.
-  TURBO_TELEMETRY_DISABLED: '1'
-  NEXT_TELEMETRY_DISABLED: '1'
-
 jobs:
-  quality:
-    name: Lint, typecheck and build
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11.8.0
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      # Prisma Client must exist before typecheck; generated types are the schema.
-      - name: Generate Prisma client
-        run: pnpm --filter @repo/db db:generate
-        env:
-          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
-
-      - name: Lint
-        run: pnpm turbo run lint
-
-      - name: Typecheck
-        run: pnpm turbo run typecheck
-
-      - name: Build
-        run: pnpm turbo run build
-        env:
-          # Build-time values only; no real service is contacted.
-          NEXT_PUBLIC_API_URL: http://localhost:4000/graphql
-
   test:
     name: Test
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: ci
-          POSTGRES_PASSWORD: ci
-          POSTGRES_DB: ci
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U ci -d ci"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
-
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 20
+    timeout-minutes: 15
 
     env:
       NODE_ENV: test
-      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci?schema=public
-      REDIS_URL: redis://localhost:6379
+      # The suite creates its own temporary database, so no service container is
+      # needed: there is nothing to provision beyond Node itself.
+      DATABASE_FILE: ./data/ci.db
       JWT_ACCESS_SECRET: ci-access-secret-at-least-32-characters-long
       JWT_REFRESH_SECRET: ci-refresh-secret-at-least-32-characters-long
-      PII_ENCRYPTION_KEY: '0000000000000000000000000000000000000000000000000000000000000000'
-      PAYMENT_WEBHOOK_SECRET: ci-webhook-secret
-      S3_ENDPOINT: http://localhost:9000
-      S3_BUCKET: tickets
-      S3_ACCESS_KEY: minioadmin
-      S3_SECRET_KEY: minioadmin
+      PII_ENCRYPTION_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
+      ENABLE_MAINTENANCE: "false"
 
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11.8.0
-
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: pnpm
 
+      # There are no runtime dependencies; this only fails if a manifest is broken.
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: npm install --no-audit --no-fund
 
-      - name: Generate Prisma client
-        run: pnpm --filter @repo/db db:generate
+      - name: Apply schema
+        run: npm run db:migrate
 
-      # The docker init scripts install citext, pg_trgm and btree_gist; the CI
-      # service container starts from a plain image, so they are added here.
-      - name: Install database extensions
-        run: |
-          PGPASSWORD=ci psql -h localhost -U ci -d ci -v ON_ERROR_STOP=1 <<'SQL'
-          CREATE EXTENSION IF NOT EXISTS "citext";
-          CREATE EXTENSION IF NOT EXISTS "pg_trgm";
-          CREATE EXTENSION IF NOT EXISTS "btree_gist";
-          CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-          SQL
-
-      - name: Apply migrations
-        run: pnpm --filter @repo/db exec prisma migrate deploy
+      - name: Seed catalogue
+        run: npm run db:seed
+        env:
+          SEED_PASSWORD: DemoPassword123!
 
       - name: Run tests
-        run: pnpm turbo run test
-
-      - name: Upload coverage
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage
-          path: '**/coverage/lcov.info'
-          retention-days: 7
-          if-no-files-found: ignore
+        run: npm test

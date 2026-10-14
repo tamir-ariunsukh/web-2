@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="mn">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Airline Booking</title>
+    <meta
+      name="description"
+      content="Search, book and manage flights. Seat selection, instant tickets and refunds."
+    />
+    <meta property="og:title" content="Airline Booking" />
+    <meta property="og:description" content="Нислэг хайж, суудлаа сонгоод, тасалбараа шууд аваарай." />
+    <meta property="og:image" content="/img/og.png" />
+    <link rel="icon" href="/img/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container">
+        <a class="brand" href="/" data-link>
+          <span class="brand-mark" aria-hidden="true">AB</span>
+          Airline Booking
+        </a>
+        <nav class="site-nav" aria-label="Main">
+          <ul id="nav-items"></ul>
+        </nav>
+      </div>
+    </header>
+
+    <main id="view" aria-live="polite"></main>
+
+    <footer class="site-footer">
+      <div class="container">
+        <div class="footer-columns">
+          <div>
+            <a class="brand" href="/" data-link>
+              <span class="brand-mark" aria-hidden="true">AB</span>
+              Airline Booking
+            </a>
+            <p class="muted" style="margin-top: 1rem">
+              Нислэг хайх, суудал сонгох, тасалбар авах — бүгд нэг дор. Аялал эхлэхээс өмнөх бүх
+              алхмыг хялбар болгосон.
+            </p>
+          </div>
+
+          <div>
+            <h2>Компани</h2>
+            <ul>
+              <li><a href="/about" data-link>Бидний тухай</a></li>
+              <li><a href="/news" data-link>Мэдээ</a></li>
+              <li><a href="/contact" data-link>Холбоо барих</a></li>
+            </ul>
+          </div>
+
+          <div>
+            <h2>Тусламж</h2>
+            <ul>
+              <li><a href="/my-bookings" data-link>Миний захиалгууд</a></li>
+              <li><a href="/search" data-link>Нислэг хайх</a></li>
+              <li><a href="/register" data-link>Бүртгүүлэх</a></li>
+              <li><a href="/login" data-link>Нэвтрэх</a></li>
+            </ul>
+          </div>
+
+          <div>
+            <h2>Холбоо барих</h2>
+            <ul>
+              <li><a href="tel:+97670000000">+976 7000 0000</a></li>
+              <li><a href="mailto:support@airline-booking.mn">support@airline-booking.mn</a></li>
+              <li>Сүхбаатарын талбай 1,<br />Улаанбаатар 14200, Монгол</li>
+              <li>Тусламж: өдөр бүр 08:00 — 22:00</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="footer-legal">
+          <p id="footer-copyright"></p>
+          <ul>
+            <li><a href="/about" data-link>Үйлчилгээний нөхцөл</a></li>
+            <li><a href="/about" data-link>Нууцлалын бодлого</a></li>
+            <li><a href="/about" data-link>Cookie</a></li>
+          </ul>
+        </div>
+      </div>
+    </footer>
+
+    <script type="module" src="/js/app.js"></script>
+  </body>
+</html>
